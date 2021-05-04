@@ -3,7 +3,8 @@ Current test repo for my Masters thesis.
 
 1. Create conda env `conda create -c rdkit -n rdkit-env rdkit` then activate `conda activate rdkit-env`
 2. Install pytorch `conda install pytorch torchvision torchaudio cudatoolkit=10.2 -c pytorch`
-3. `conda install -c conda-forge scikit-learn `
+3. `conda install -c conda-forge scikit-learn`
+4. Install pymol `conda install -c schrodinger pymol`
 
 
 new envs take ~30m to load up on vscode
