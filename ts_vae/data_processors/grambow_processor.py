@@ -8,6 +8,8 @@ from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
 from enum import Enum
 
+# TODO: combine train and test into one for easier loading, perhaps?
+
 class GeometryFile(Enum):
     """ Enum for indices corresponding to each reactant, transition state, product file. 
         Use this ordering convention throughout the project.
@@ -122,13 +124,12 @@ class ReactionDataset(InMemoryDataset):
         # maybe generalise this function with a flag for different initial inputs
             # e.g. interatomic distances, Z-matrix, nuclear charge, etc.
         # if these are different enough, may be better to have this instance as an abstract class then have implementations for each matrix type
-        pass
-
+    
     # TODO
-    def visualise_feature_dynamics()
-        # may need a function here to calculate reaction centre
-        # visualise how features change over time e.g. interatomic distances
-        # how much are interatomic distances changing? what precision of model do we need to capture these differences?
+    def visualise_feature_dynamics(self):
+        # takes in reactants, ts, products; calculates reaction centre
+        # compare how reaction centre changes: by how much, what precision do we need?
+        # could do similar with interatomic distances
         return
 
     # not sure if necessary as can just iterate through
