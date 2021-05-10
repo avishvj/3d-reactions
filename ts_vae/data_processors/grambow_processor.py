@@ -99,7 +99,7 @@ class ReactionDataset(InMemoryDataset):
                 edge_attr = F.one_hot(edge_type, num_classes=len(self.bonds)).to(torch.float) 
 
                 # order edges based on combined ascending order
-                perm = (edge_index[0] * N + edge_index[1]).argsort()
+                perm = (edge_index[0] * N + edge_index[1]).argsort() # TODO
                 edge_index = edge_index[:, perm]
                 edge_type = edge_type[perm]
                 edge_attr = edge_attr[perm]
@@ -118,7 +118,7 @@ class ReactionDataset(InMemoryDataset):
 
             torch.save(self.collate(data_list), self.processed_paths[g_idx]) 
 
-
+"""
     # TODO: implement transforms of atomic features to interatomic distances, etc.
     def coordinate_to_interatomic_dist():
         # maybe generalise this function with a flag for different initial inputs
@@ -138,3 +138,4 @@ class ReactionDataset(InMemoryDataset):
         return
 
     # other funcs: identifying 3D bias in dataset? perhaps need to take the original log files in to get a broader range of reactions
+"""
