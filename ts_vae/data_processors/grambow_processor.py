@@ -51,6 +51,7 @@ class ReactionDataset(InMemoryDataset):
     def process(self):
         """ Processes each of the six geometry files and appends to a list. 
             Code mostly lifted from QM9 dataset creation https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/datasets/qm9.html 
+            Transforms molecules to their atom features and adjacency lists.
         """
 
         for g_idx, geometry_file in enumerate(self.raw_file_names): 
