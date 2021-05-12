@@ -59,7 +59,7 @@ class ReactionDataset(InMemoryDataset):
             data_list = []
             full_path = self.root + geometry_file
             geometries = Chem.SDMolSupplier(full_path, removeHs=False, sanitize=False)
-            
+
             # get atom and edge features for each geometry
             for i, mol in enumerate(tqdm(geometries)):
                 
