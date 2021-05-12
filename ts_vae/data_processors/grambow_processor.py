@@ -60,7 +60,9 @@ class ReactionDataset(InMemoryDataset):
             full_path = self.root + geometry_file
             geometries = Chem.SDMolSupplier(full_path, removeHs=False, sanitize=False)
             
+            # get atom and edge features for each geometry
             for i, mol in enumerate(tqdm(geometries)):
+                
                 N = mol.GetNumAtoms()
                 # get atom positions as matrix w shape [num_nodes, num_dimensions] = [num_atoms, 3]
                 atom_data = geometries.GetItemText(i).split('\n')[4:4 + N] 
@@ -84,6 +86,7 @@ class ReactionDataset(InMemoryDataset):
                     sp.append(1 if hybridisation == HybridizationType.SP else 0)
                     sp2.append(1 if hybridisation == HybridizationType.SP2 else 0)
                     sp3.append(1 if hybridisation == HybridizationType.SP3 else 0)
+                    # !!! should do the features that lucky does: whether bonded, 3d_rbf
 
                 # bond/edge features
                 row, col, edge_type = [], [], []
