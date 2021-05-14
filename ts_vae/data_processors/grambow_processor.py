@@ -54,6 +54,8 @@ class ReactionDataset(InMemoryDataset):
             Transforms molecules to their atom features and adjacency lists.
         """
 
+        limit = 100
+
         for g_idx, geometry_file in enumerate(self.raw_file_names): 
             
             data_list = []
@@ -62,6 +64,10 @@ class ReactionDataset(InMemoryDataset):
 
             # get atom and edge features for each geometry
             for i, mol in enumerate(tqdm(geometries)):
+
+                # temp soln cos of split edge memory issues
+                if i == limit:
+                    break
                 
                 N = mol.GetNumAtoms()
                 # get atom positions as matrix w shape [num_nodes, num_dimensions] = [num_atoms, 3]
