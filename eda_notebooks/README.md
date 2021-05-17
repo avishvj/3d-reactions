@@ -3,7 +3,7 @@ How does the reactant change into the product? Identify the reaction centre and 
 - Bond dynamics: which bonds break/form? How many across training data?
 - Atom dynamics: which atoms move and by how much? 
 - Angle dynamics: how do bond/dihedral angles change? 
-- TODO: get bond lengths and look at how they change.
+- TODO: get bond lengths and look at how they change. https://www.rdkit.org/docs/source/rdkit.Chem.rdMolTransforms.html
 
 ### MIT Model EDA (Evaluating Model)
 - Comparing ground truth TS with initial model guess (D_init), final model guess, and average TS based on distance.
