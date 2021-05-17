@@ -1,14 +1,9 @@
 ### Reaction Dynamics EDA (Training Set)
 How does the reactant change into the product? Identify the reaction centre and magnitude of change: bonds break/form; atoms moving; bond and dihedral angles changing. 
-- Bond dynamics:
-    - Which bonds break/form?
-    - How many across training data? Use adjacency matrix differences.
-- Atom dynamics: 
-    - How much do coordinates change?
-    - Which atoms move?
-- Angle dynamics:
-    - How do bond/dihedral angles change? This is probably encoded by atom dynamics already.
-
+- Bond dynamics: which bonds break/form? How many across training data?
+- Atom dynamics: which atoms move and by how much? 
+- Angle dynamics: how do bond/dihedral angles change? 
+- TODO: get bond lengths and look at how they change.
 
 ### MIT Model EDA (Evaluating Model)
 - Comparing ground truth TS with initial model guess (D_init), final model guess, and average TS based on distance.
