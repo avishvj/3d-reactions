@@ -4,3 +4,9 @@
 *$py.class
 
 data/*
+
+# aml stuff
+*.ipynb_aml_checkpoints/*
+.ipynb_aml_checkpoints/
+*.amltmp
+*.amltemp
