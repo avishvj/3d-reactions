@@ -3,10 +3,15 @@
 *.py[cod]
 *$py.class
 
+# experiment runs
+log/*
+
+# for now while prototyping
 data/*
 
-# aml stuff
+# aml
 *.ipynb_aml_checkpoints/*
 .ipynb_aml_checkpoints/
 *.amltmp
 *.amltemp
+
