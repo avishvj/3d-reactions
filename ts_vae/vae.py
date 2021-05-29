@@ -26,7 +26,7 @@ class VAE(nn.Module):
         if self.training:
             # eps = normal(loc=0, scale=1, size=(len(graphs.nodes), self.latent_dim=2d))
             # since variances only positive, computing log allows you to output full real range for encoder
-            eps = normal(0, 1, size=(len(input_nodes), latent_dims=2d))
+            eps = normal(0, 1, size=(len(input_nodes), latent_dims))
             z = mean_z + eps * sqrt(exp(log_var_z))
             return z
         else:
@@ -74,8 +74,7 @@ for epoch in range(0, epochs+1):
             loss.backward()
             optimiser.step()
         # === log ===
-        print(f'====> Epoch: {epoch} Average loss: {
-            train_loss / len(train_loader.dataset):.4f}')
+        print(f'====> Epoch: {epoch} Average loss: {train_loss / len(train_loader.dataset):.4f}')
         
     # testing
     means, log_vars, labels = list(), list(), list()
