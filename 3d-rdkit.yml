@@ -50,3 +50,5 @@ dependencies:
     - pysocks==1.7.1
     - tornado==6.1
     - setuptools==52.0.0
+
+# added: ipykernel
