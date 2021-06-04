@@ -8,6 +8,7 @@ log/*
 
 # for now while prototyping
 data/*
+spare_code.ipynb
 
 # aml
 *.ipynb_aml_checkpoints/*

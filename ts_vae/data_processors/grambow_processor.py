@@ -21,6 +21,7 @@ class GeometryFile(Enum):
     test_r = 3
     test_ts = 4
     test_p = 5
+    train_rp_50 = 6
 
 class ReactionDataset(InMemoryDataset):
     """ Creates instance of reaction dataset. """
@@ -35,14 +36,14 @@ class ReactionDataset(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return ['/raw/train_reactants.sdf', '/raw/train_ts.sdf', '/raw/train_products.sdf', '/raw/test_reactants.sdf', '/raw/test_ts.sdf', '/raw/test_products.sdf']
+        return ['/raw/train_reactants.sdf', '/raw/train_ts.sdf', '/raw/train_products.sdf', '/raw/test_reactants.sdf', '/raw/test_ts.sdf', '/raw/test_products.sdf', '/raw/train_rp_50.sdf']
     
     @property
     def processed_file_names(self):
         """ If files already in processed folder, this processing is skipped. 
             Convenient for accessing the individual processed files without having to recreate them each time. 
         """
-        return ['train_r.pt', 'train_ts.pt', 'train_p.pt', 'test_r.pt', 'test_ts.pt', 'test_p.pt']
+        return ['train_r.pt', 'train_ts.pt', 'train_p.pt', 'test_r.pt', 'test_ts.pt', 'test_p.pt', 'train_rp_50.pt']
 
     def download(self):
         """ Not required in this project. """
