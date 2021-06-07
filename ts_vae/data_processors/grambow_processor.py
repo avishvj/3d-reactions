@@ -9,6 +9,8 @@ from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
 from enum import Enum
 
+# TODO: abstract classes for each type? can that be done with InMemoryDataset?
+
 TEMP_MOLS_LIMIT = 842 * 2
 
 class GeometryFile(Enum):
@@ -81,6 +83,9 @@ class ReactionDataset(InMemoryDataset):
         pass
     
     def process_geometry_file(self, geometry_file, list = None):
+        """ Code mostly lifted from QM9 dataset creation https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/datasets/qm9.html 
+            Transforms molecules to their atom features and adjacency lists.
+        """
         
         limit = TEMP_MOLS_LIMIT
 
@@ -157,10 +162,7 @@ class ReactionDataset(InMemoryDataset):
         
 
     def process(self):
-        """ Processes each of the six geometry files and appends to a list. 
-            Code mostly lifted from QM9 dataset creation https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/datasets/qm9.html 
-            Transforms molecules to their atom features and adjacency lists.
-        """
+        """ Processes each of the six geometry files and appends to a list. """
 
         if self.dataset_type == "individual":
             

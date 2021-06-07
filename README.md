@@ -10,10 +10,12 @@ include: python version, conda version, pytorch + PTG versions, windows versions
 
 
 x. commands to download pytorch geometric (+ scatter, etc.) with corresponding cuda versions
+
 x+1. Install tqdm `pip install tqdm`
 
-new envs take ~30m to load up on vscode
-
-should add in other stuff for comparisons to existing models: ts_gen code, etc.
-
 Maybe? `conda install -c rdkit rdkit=2018.09.1`
+
+Should replace this later with:
+- Install .yml file
+- Stuff to compare to existing models
+- Notebooks: mention creating ipython kernels corresponding to .yml
