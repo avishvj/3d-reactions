@@ -9,9 +9,8 @@ from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
 from enum import Enum
 
-# TODO: abstract classes for each type? can that be done with InMemoryDataset?
-
-TEMP_MOLS_LIMIT = 842 * 2
+# TEMP_MOLS_LIMIT = 842 * 2
+TEMP_MOLS_LIMIT = 30
 
 class GeometryFile(Enum):
     """ Enum for indices corresponding to each reactant, transition state, product file. 
@@ -35,13 +34,16 @@ class ConcatGeometryFile(Enum):
     test_concat_rp = 2
     test_ts = 3
 
+class FullFile(Enum):
+    reactants = 0
+    ts = 1
+    products = 2
+
 class ReactionDataset(InMemoryDataset):
     """ Creates instance of reaction dataset. 
         To add a new file: create file in data/raw, add to GeometryFile enum, add to func raw_file_names(), and add to processed_file_names().
         TODO: remove TEMP_MOLS_LIMIT.
-        TODO: change Temp name.
-        TODO: hackiness of if/elif in init(), processed_file_names(), process(). 
-        TODO: combine train and test into one for easier loading, perhaps?
+        TODO: hackiness of if/elif in init(), processed_file_names(), process() -> is abstract class poss with InMemoryDataset?
         TODO: was this necessary? for concatenation, you could just train each geometry file after another, no?
     """
     types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
@@ -58,6 +60,9 @@ class ReactionDataset(InMemoryDataset):
         
         elif dataset_type == 'concat':
             self.data, self.slices = torch.load(self.processed_paths[ConcatGeometryFile[geo_file].value]) # concat
+        
+        if dataset_type == 'full':
+            self.data, self.slices = torch.load(self.processed_paths[FullFile[geo_file].value]) # full
 
     @property
     def raw_file_names(self):
@@ -75,8 +80,11 @@ class ReactionDataset(InMemoryDataset):
         elif self.dataset_type == "concat":
             return ['train_concat_rp.pt', 'train_ts.pt', 'test_concat_rp.pt', 'test_ts.pt']
         
+        elif self.dataset_type == "full":
+            return ['reactants.pt', 'ts.pt', 'products.pt']
+
         else:
-            raise ValueError('The dataset type you entered does not exist... try again with \'individual\' or \'concat\'.')
+            raise ValueError('The dataset type you entered does not exist... try again with \'individual\' or \'concat\' or \'full\'.')
 
     def download(self):
         """ Not required in this project. """
@@ -191,6 +199,26 @@ class ReactionDataset(InMemoryDataset):
             # test ts
             test_ts = self.process_geometry_file('/raw/test_ts.sdf')
             torch.save(self.collate(test_ts), self.processed_paths[3])
+
+        elif self.dataset_type == "full":
+
+            # concat train r and test r
+            reactants = []
+            reactants = self.process_geometry_file('/raw/train_reactants.sdf', reactants)
+            reactants = self.process_geometry_file('/raw/test_reactants.sdf', reactants) 
+            torch.save(self.collate(reactants), self.processed_paths[0])
+
+            # concat train ts and test ts
+            ts = []
+            ts = self.process_geometry_file('/raw/train_ts.sdf', ts)
+            ts = self.process_geometry_file('/raw/test_ts.sdf', ts) 
+            torch.save(self.collate(ts), self.processed_paths[1])
+
+            # concat train p and test p
+            products = []
+            products = self.process_geometry_file('/raw/train_products.sdf', products)
+            products = self.process_geometry_file('/raw/test_products.sdf', products) 
+            torch.save(self.collate(products), self.processed_paths[2])
 
 
 """
