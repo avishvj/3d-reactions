@@ -9,7 +9,7 @@ from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
 from enum import Enum
 
-TEMP_MOLS_LIMIT = 300
+TEMP_MOLS_LIMIT = 842 * 2
 
 class GeometryFile(Enum):
     """ Enum for indices corresponding to each reactant, transition state, product file. 
