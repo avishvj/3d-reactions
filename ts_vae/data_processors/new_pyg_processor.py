@@ -1,11 +1,3 @@
-# functions needed:
-#   - collate(): collate data into batch format
-#       - collate_fn specifies how exactly samples need to be batched
-#       - collate_fn receives your __getitem__ func
-
-# why use PyG... because of message passing? need to modify training method - that is the issue.
-
-
 # pytorch, pyscatter, pyg
 import torch
 import torch.nn.functional as F
@@ -21,13 +13,17 @@ from rdkit.Chem.rdchem import BondType as BT
 from tqdm import tqdm
 
 class ReactionTriple(Data):
-    # TODO: funcs for reaction core, data vis
+    """ Contains graph representation (as PyTorch Geometric Data() class) for reactant, TS, and product in a reaction trajectory.
+    Notes:
+        - Any params passed in must be set to default = None so that PyTorch's collate function works correctly.
+        - Key names are the variable names for params passed into __init__(). These are the same keys used for batching.
+        - Different number of atoms could be strange when batching.
+    TODO:
+        - Functions for reaction core and data vis
+        - Move number of atoms (and other checks?) into their own function.
+    """
 
     def __init__(self, r = None, ts = None, p = None):
-        # set defaults to None so that can work with collate function !! v important
-
-        # TODO: make the key names clear here
-        
         super(ReactionTriple, self).__init__()
         
         # all molecules
@@ -35,14 +31,14 @@ class ReactionTriple(Data):
         self.ts = ts
         self.p = p
 
-        # number of atoms should be same, helps with batching, TODO: other checks?
-        # TODO: maybe move this into its own func
         if r and ts and p:
             assert len(r.z) == len(ts.z) == len(p.z)
             self.num_atoms = len(r.z)
 
     def __inc__(self, key, value):
-        # Defines incremental count between two consecutive graph attributes.
+        """ Defines incremental count between two consecutive graph attributes.
+        Used for batching individual parts of the reaction.
+        """
         if key == 'r':
             return self.r.edge_index.size(0)
         elif key == 'ts':
@@ -53,10 +49,11 @@ class ReactionTriple(Data):
             return super().__inc__(key, value)
 
 class ReactionDataset(InMemoryDataset):
-    # contains triples of reactant, ts, product
-    # PyG could be better but run into issues with collate func:
-    #   - why not just collate on batches (can do R, TS, P simultaneously because graphs based on max num_atoms in any of 3)
-    # TODO: have get_tracker: factory method for wandb tracker log [ref pyg 3d]
+    """ Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product).
+    TODO:
+        - Remove TEMP_MOLS_LIMIT
+        - get_tracker(): factory method for wandb tracker log [ref pyg 3D]
+    """
 
     TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
     BONDS = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
@@ -82,19 +79,18 @@ class ReactionDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
+        """ If files already in processed folder, this func means we don't have to recreate them. """
         return ['reactants.pt', 'ts.pt', 'products.pt', 'full.pt']
-
-    # my collate func to use instead of the PyG func
-    # also how to use for my batches
-    def collate_reactions(self):
-
-
-        # keys = [Data params e.g. edge, etc.] data_list[0].keys = [r, p, ts]
-        # class = Data()
-
+    
+    def download(self):
+        """ Not required in this project. """
         pass
 
     def process(self):
+        """ Process reactants, TSs, and products. Store in their own files as well as together as reactions. 
+        Notes:
+            - Because of initial format of data (given as train and test), we pass the list of geometries forward.
+        """
 
         # concat original train and test reactants
         reactants = []
@@ -117,17 +113,18 @@ class ReactionDataset(InMemoryDataset):
         for rxn_id in range(len(reactants)):
             rxn = ReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
             rxns.append(rxn)
-        self.rxn_data = rxns
+        self.rxn_data = rxns # spare rxn_data if funny business with main rxns
 
         torch.save(self.collate(reactants), self.processed_paths[0])
         torch.save(self.collate(tss), self.processed_paths[1])
         torch.save(self.collate(products), self.processed_paths[2])
         torch.save(self.collate(rxns), self.processed_paths[3])
-        # TODO: modify collate for rxn triplets list
 
     def process_geometry_file(self, geometry_file, current_list = None):
-        # from QM9 dataset creation
-
+        """ Transforms molecules to their atom features and adjacency lists.
+        Notes:
+            - Code mostly lifted from PyG QM9 dataset creation https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/datasets/qm9.html 
+        """
         data_list = current_list if current_list else []
         counted = len(data_list)
         full_path = self.root + geometry_file
