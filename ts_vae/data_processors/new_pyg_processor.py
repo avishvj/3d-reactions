@@ -23,7 +23,11 @@ from tqdm import tqdm
 class ReactionTriple(Data):
     # TODO: funcs for reaction core, data vis
 
-    def __init__(self, r, ts, p):
+    def __init__(self, r = None, ts = None, p = None):
+        # set defaults to None so that can work with collate function !! v important
+
+        # TODO: make the key names clear here
+        
         super(ReactionTriple, self).__init__()
         
         # all molecules
@@ -32,8 +36,10 @@ class ReactionTriple(Data):
         self.p = p
 
         # number of atoms should be same, helps with batching, TODO: other checks?
-        assert len(r.z) == len(ts.z) == len(p.z)
-        self.num_atoms = len(r.z)
+        # TODO: maybe move this into its own func
+        if r and ts and p:
+            assert len(r.z) == len(ts.z) == len(p.z)
+            self.num_atoms = len(r.z)
 
     def __inc__(self, key, value):
         # Defines incremental count between two consecutive graph attributes.
@@ -61,11 +67,13 @@ class ReactionDataset(InMemoryDataset):
         self.rxn_data = None
         super(ReactionDataset, self).__init__(root_folder, transform, pre_transform)
 
+        # keep individual geometries stored in case
         self.r_data, self.r_slices = torch.load(self.processed_paths[0])
         self.ts_data, self.ts_slices = torch.load(self.processed_paths[1]) 
         self.p_data, self.p_slices = torch.load(self.processed_paths[2])
-
-        ### need to sort after this point
+        
+        # key data
+        self.data, self.slices = torch.load(self.processed_paths[3])
         
     @property
     def raw_file_names(self):
@@ -79,6 +87,11 @@ class ReactionDataset(InMemoryDataset):
     # my collate func to use instead of the PyG func
     # also how to use for my batches
     def collate_reactions(self):
+
+
+        # keys = [Data params e.g. edge, etc.] data_list[0].keys = [r, p, ts]
+        # class = Data()
+
         pass
 
     def process(self):
@@ -109,7 +122,7 @@ class ReactionDataset(InMemoryDataset):
         torch.save(self.collate(reactants), self.processed_paths[0])
         torch.save(self.collate(tss), self.processed_paths[1])
         torch.save(self.collate(products), self.processed_paths[2])
-        # torch.save(self.collate(rxns), self.processed_paths[3])
+        torch.save(self.collate(rxns), self.processed_paths[3])
         # TODO: modify collate for rxn triplets list
 
     def process_geometry_file(self, geometry_file, current_list = None):
