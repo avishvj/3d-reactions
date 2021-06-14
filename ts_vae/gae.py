@@ -101,3 +101,78 @@ class NodeDecoder(nn.Module):
         return self.decoder(input_data.nodes, training = training)
 
 # then could have CoordDecoder and GlobalDecoder, too
+
+from .layers import GCL
+
+class BasicAE(nn.Module):
+    # TODO: replace x -> z when encoding
+
+    def __init__(self, hidden_nf, embedding_nf, device = 'cpu', act_fn = nn.ReLU(), n_layers = 0):
+        super(BasicAE, self).__init__()
+        self.hidden_nf = hidden_nf
+        self.embedding_nf = embedding_nf
+        self.device = device
+        self.n_layers = n_layers
+
+        # encoder
+        self.add_module("GCL_0", GCL(1, self.hidden_nf, self.hidden_nf, edges_in_nf = 1))
+        for i in range(1, n_layers):
+            self.add_module("GCL_%d" % i, GCL(self.hidden_nf, self.hidden_nf, self.hidden_nf, edges_in_nf = 1))
+        self.fc_emb = nn.Linear(self.hidden_nf, self.embedding_nf)
+
+        # decoder layer
+        self.dec_layer = None
+        
+        self.to(self.device)
+
+    def encode(self, nodes, edges, edge_attr):
+        # note: assumes all layers are GCL layers
+        
+        # initial layer
+        h, _ = self._modules["GCL_0"](nodes, edges, edge_attr)
+        
+        # for hidden layers if present
+        for i in range(1, self.n_layers):
+            h, _ = self._modules["GCL_%d" % i](h, edges, edge_attr = edge_attr) 
+        
+        return self.fc_emb(h)
+
+
+    def decode(self, x):
+        return self.decode_from_x(x, linear_layer = self.dec_layer)
+
+    def decode_from_x(self, x, linear_layer = None, W = 10, b = -1, remove_diag= True):
+        # W, b: weights and biases in case no linear layer
+        
+        num_nodes = x.size(0)
+        x_a = x.unsqueeze(0)
+        x_b = torch.transpose(x_a, 0, 1) # (_, first dim to t(), second_dim to t())
+        X = (x_a - x_b) ** 2
+        
+        X = X.view(num_nodes ** 2, -1) # TODO: sigmoid?
+
+        if linear_layer is not None:
+            X = torch.sigmoid(linear_layer(X))
+        else:
+            X = torch.sigmoid(W * torch.sum(X, dim = 1) + b)
+        
+        adj_pred = X.view(num_nodes, num_nodes)
+        if remove_diag:
+            # eye returns 2D tensor with ones on diag and zeroes elsewhere
+            # (1 - torch.eye(num_nodes)) gives [num_nodes, num_nodes] with all 1s except 0 on diag
+            # * is hadamard product
+            # i.e. this removes self loops (i.e. 1s on diag)
+            # TODO: the pyg method adds self-loops, what do I want?
+            adj_pred = adj_pred * (1 - torch.eye(num_nodes).to(self.device))
+        
+        return adj_pred
+
+    def forward(self, nodes, edges, edge_attr = None):
+        x = self.encode(nodes, edges, edge_attr)
+        adj_pred = self.decode(x)
+        return adj_pred, x
+
+
+
+
+    
