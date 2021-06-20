@@ -35,7 +35,7 @@ class Node_AE(nn.Module):
     def forward(self, node_feats, edge_index, edge_attr):
         node_emb = self.encode(node_feats, edge_index, edge_attr)
         adj_pred = self.decode(x = node_emb)
-        return adj_pred, node_emb
+        return node_emb, adj_pred
 
     def encode(self, node_feats, edge_index, edge_attr):
         # node layer then linear
@@ -72,10 +72,6 @@ class Node_Layer(nn.Module):
         node_is, _ = edge_index
         agg = unsorted_segment_sum(edge_attr, node_is, node_feats.size(0))
         node_in = torch.cat([node_feats, agg], dim = 1)
-        print("node_feats: ", node_feats.shape)
-        print("agg: ", agg.shape)
-        print("node_in shape: ", node_in.shape)
-        print("node mlp: ", self.node_mlp)
         return self.node_mlp(node_in)
     
     def forward(self, node_feats, edge_index, edge_attr):

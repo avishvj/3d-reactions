@@ -206,12 +206,11 @@ class EGNN_Simple(nn.Module):
         h = self.emb_out(h)
         return h, x
 
-
-class EGNN_AE(nn.Module):
+class MolGraph_AE(nn.Module):
     # simple one first
 
     def __init__(self, h_nf, emb_nf = 4, num_node_fs = 11, n_layers = 1, act_fn = nn.ReLU(), device = 'cpu'):
-        super(EGNN_AE, self).__init__()
+        super(MolGraph_AE, self).__init__()
 
         self.num_node_fs = num_node_fs
         self.h_nf = h_nf
@@ -230,26 +229,30 @@ class EGNN_AE(nn.Module):
         
         self.to(device)
     
-    def forward(self, node_feats, edge_index, edge_attr = None):        
+    def forward(self, node_feats, edge_index, edge_attr):        
         # encode features then decode to adj
         # could just encode features to coords then decode to adj
 
-        node_feats, edge_feats = self.encode(node_feats, edge_index, edge_attr)
-        return self.fc_emb(node_feats)
+        node_emb = self.encode(node_feats, edge_index, edge_attr)
+        adj_pred = self.decode(x = node_emb)
 
-        # adj_pred = self.decode(x) # TODO: sort out!!!
-        # return adj_pred
+        return adj_pred, node_emb
 
     def encode(self, node_feats, edge_index, edge_attr):
         # one (node + edge) layer
+        # output edges unused
+        # returns nodes through linear layer as our embedding
+
         node_feats, edge_feats = self._modules["NE"](node_feats, edge_index, edge_attr)
-        return node_feats, edge_feats
+        return self.fc_emb(node_feats)
     
     def decode(self, x):
         return self.decode_from_x(x, W = self.W, b = self.b)
 
     def decode_from_x(self, x, W = 10, b = -1, remove_diag = True):
-        # W, b: weights and biases in case no linear layer
+        # W, b: weights and biases for linear layer
+        # returns adjacency matrix
+
         x_a = x.unsqueeze(0)
         x_b = torch.transpose(x_a, 0, 1) # (_, first dim to t(), second_dim to t())
         X = (x_a - x_b) ** 2

@@ -1,4 +1,5 @@
 # pytorch, pyscatter, pyg
+from numpy.lib.polynomial import polysub
 import torch
 import torch.nn.functional as F
 from torch_scatter import scatter
@@ -12,10 +13,70 @@ from rdkit.Chem.rdchem import BondType as BT
 # other
 from tqdm import tqdm
 
+
+class OtherReactionTriple(Data):
+    # seeing if this works
+
+    def __init__(self, r = None, ts = None, p = None):
+        super(OtherReactionTriple, self).__init__()
+
+        # initial checks
+        if r and ts and p:
+            assert len(r.z) == len(ts.z) == len(p.z), \
+                "The mols have different number of atoms."
+            assert r.idx == ts.idx == p.idx, \
+                "The IDs of each mol don't match. Are you sure your data processing is correct?"
+            self.num_atoms = len(r.z)
+            self.idx = r.idx
+
+            # reactant
+            self.edge_attr_r = r.edge_attr
+            self.edge_index_r = r.edge_index
+            self.pos_r = r.pos
+            self.x_r = r.x
+
+            # ts
+            self.edge_attr_ts = ts.edge_attr
+            self.edge_index_ts = ts.edge_index
+            self.pos_ts = ts.pos
+            self.x_ts = ts.x
+
+            # product
+            self.edge_attr_p = p.edge_attr
+            self.edge_index_p = p.edge_index
+            self.pos_p = p.pos
+            self.x_p = p.x
+        else:
+            NameError("Reactant, TS, or Product not defined for this reaction.")
+        
+        # all molecules as Data(edge_attr, edge_index, idx, pos, x, z)
+        self.r = r
+        self.ts = ts
+        self.p = p
+
+    
+    def __inc__(self, key, value):
+        if key == 'r':
+            return self.r.x.size(0)
+        if key == 'ts':
+            return self.ts.x.size(0)
+        if key == 'p':
+            return self.p.x.size(0)
+        else:
+            return super().__inc__(key, value)
+    
+    def __cat_dim__(self, key, item):
+        if key == 'r' or key == 'ts' or key == 'p':
+            return None
+        else:
+            return super().__cat_dim__(key, item)
+
+
 class ReactionTriple(Data):
     """ Contains graph representation (as PyTorch Geometric Data() class) for reactant, TS, and product in a reaction trajectory.
     Notes:
-        - Any params passed in must be set to default = None so that PyTorch's collate function works correctly.
+        - Any params passed in must be set to default = None so that PyTorch's collate function works correctly. This collate fn
+          helps us batch different graphs, too.
         - Key names are the variable names for params passed into __init__(). These are the same keys used for batching.
         - Different number of atoms could be strange when batching.
     TODO:
@@ -34,17 +95,26 @@ class ReactionTriple(Data):
         if r and ts and p:
             assert len(r.z) == len(ts.z) == len(p.z)
             self.num_atoms = len(r.z)
+        else:
+            NameError("Reactant, TS, or Product not defined for this reaction.")
 
     def __inc__(self, key, value):
         """ Defines incremental count between two consecutive graph attributes.
-        Used for batching individual parts of the reaction.
+        Notes:
+            - Helps with batching individual parts of the reaction.
+        
+        Parameters
+        ----------
+        key : str 
+            Either r, p, ts. Use this in follow batch to learn on this set of the trajectory.
         """
         if key == 'r':
-            return self.r.edge_index.size(0)
+            return self.r.x.size(0)
+            # return self.r.edge_index.size(0)
         elif key == 'ts':
-            return self.ts.edge_index.size(0)
+            return self.ts.x.size(0)
         elif key == 'p':
-            return self.p.edge_index.size(0)
+            return self.p.x.size(0)
         else:
             return super().__inc__(key, value)
 
@@ -112,6 +182,7 @@ class ReactionDataset(InMemoryDataset):
         rxns = []
         for rxn_id in range(len(reactants)):
             rxn = ReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
+            # rxn = OtherReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
             rxns.append(rxn)
         self.rxn_data = rxns # spare rxn_data if funny business with main rxns
 
