@@ -92,8 +92,6 @@ class NodeEdge_AE(nn.Module):
         return adj_pred
 
 
-
-
 class NodeEdge_Layer(nn.Module):
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf, out_nf, bias = True, act_fn = nn.ReLU()):
@@ -206,43 +204,3 @@ def test_ne_ae(ne_ae, loader):
         res['total_loss_arr'].append(total_loss.item())
     
     return res['total_loss'] / res['counter'], res
-
-# could just add train/test tags in original func as mostly same funcs
-# TODO: remove opt
-def test_node_ae(node_ae, opt, loader):
-    
-    res = {'loss': 0, 'counter': 0, 'loss_arr': [], 'adj_loss_arr': [], 'node_recon_loss_arr': []}
-
-    for i, rxn_batch in enumerate(loader):
-
-        # test mode
-        node_ae.eval()
-
-        # generate node embeddings and predicted adj matrix
-        node_feats, edge_index, edge_attr = rxn_batch.x, rxn_batch.edge_index, rxn_batch.edge_attr
-        batch_size, batch_vec = len(rxn_batch.idx), rxn_batch.batch
-        node_emb, recon_node_fs, adj_pred = node_ae(node_feats, edge_index, edge_attr)
-
-        # ground truth adj matrix; if add batch vec, you get two, if add edge_attr get x4 in dim
-        adj_gt = to_dense_adj(edge_index = edge_index).squeeze(dim = 0)
-        assert adj_gt.shape == adj_pred.shape, "Your adjacency matrices don't have the same shape!"
-        
-        # node recon loss
-        node_recon_loss = F.mse_loss(recon_node_fs, node_feats)
-
-        # adj loss
-        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt)
-
-        # simple combination of loss right now
-        loss = node_recon_loss + adj_loss
-
-        # record batch results
-        res['loss'] += loss.item() * batch_size
-        res['counter'] += batch_size
-        res['adj_loss_arr'].append(adj_loss.item())
-        res['node_recon_loss_arr'].append(node_recon_loss.item())
-        res['loss_arr'].append(loss.item())
-    
-    return res['loss'] / res['counter'], res
-
-

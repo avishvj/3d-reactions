@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from torch_geometric.utils import to_dense_adj
 
 def unsorted_segment_sum(edge_attr, row, num_segments):
@@ -10,6 +9,54 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
     row = row.unsqueeze(-1).expand(-1, edge_attr.size(1))
     result.scatter_add_(0, row, edge_attr) # adds all values from tensor other int self at indices
     return result
+
+
+class NodeEdgeCoord_AE(nn.Module):
+
+    def __init__(self, in_node_nf = 11, in_edge_nf = 4, h_nf = 4, out_nf = 4, emb_nf = 2, act_fn = nn.ReLU(), device = 'cpu'):
+        super(NodeEdgeCoord_AE, self).__init__()
+        
+        # standard params
+        self.in_node_nf = in_node_nf
+        self.in_edge_nf = in_edge_nf
+        self.h_nf = h_nf
+        self.out_nf = out_nf
+        self.emb_nf = emb_nf
+        self.device = device
+
+        # coord params?
+
+        # encoder
+        necl = NodeEdgeCoord_Layer(in_node_nf = in_node_nf, in_edge_nf = in_edge_nf, in_edge_coord_nf = 3,
+                                   h_nf = h_nf, out_nf = out_nf, act_fn = act_fn)
+        self.add_module("NodeEdgeCoord", necl)
+        # final emb for node and edge
+        self.fc_node_emb = nn.Linear(out_nf, emb_nf)
+        self.fc_edge_emb = nn.Linear(out_nf, emb_nf)
+
+        self.to(device)
+    
+    def forward(self, node_feats, edge_index, edge_attr, coords):
+        # encode then decode
+        pass
+
+    def encode(self):
+        pass
+
+    def decode(self):
+        pass
+
+    def decode_to_node_fs(self, node_emb):
+        pass
+
+    def decode_to_edge_fs(self):
+        pass        
+
+    def decode_to_adj(self):
+        pass
+
+    def decode_to_coords(self):
+        pass
 
 class NodeEdge_AE(nn.Module):
 
@@ -91,6 +138,73 @@ class NodeEdge_AE(nn.Module):
         
         return adj_pred
 
+
+class NodeEdgeCoord_Layer(nn.Module):
+    
+    def __init__(self, in_node_nf, in_edge_nf, in_edge_coord_nf, h_nf, out_nf, bias = True, act_fn = nn.ReLU()):
+
+        super(NodeEdgeCoord_Layer, self).__init__()
+
+        # node_norm : LayerNorm; coord_norm: define (follow se3); edge_norm: required?
+
+        # setting feature and mlp dimensions
+        out_edge_nf = out_nf
+        in_node_mlp_nf = in_node_nf + out_edge_nf # should be equal to node_feats + agg + coords
+        in_edge_mlp_nf = (in_node_nf * 2) + in_edge_nf + in_edge_coord_nf
+        in_coord_mlp_nf = in_edge_coord_nf
+
+        self.node_mlp = nn.Sequential(nn.Linear(in_node_mlp_nf, h_nf, bias = bias),
+                                      act_fn,
+                                      nn.Linear(h_nf, out_nf, bias = bias))
+
+
+        self.edge_mlp = nn.Sequential(nn.Linear(in_edge_mlp_nf, h_nf, bias = bias),
+                                      act_fn,
+                                      nn.Linear(h_nf, out_nf, bias = bias))
+        
+        # no bias, TODO: what are dims? 3 for xyz?
+        self.coord_mlp = nn.Sequential(nn.Linear(in_coord_mlp_nf, h_nf),
+                                       act_fn,
+                                       nn.Linear(h_nf, out_nf))
+    
+    def node_model(self, node_feats, edge_index, edge_attr, coords):
+        node_is, _ = edge_index
+        agg = unsorted_segment_sum(edge_attr, node_is, node_feats.size(0))
+        node_in = torch.cat([node_feats, agg, coords], dim = 1)
+        return self.node_mlp(node_in)
+    
+    def edge_model(self, node_feats, edge_index, edge_attr, coords):
+        node_is, node_js = edge_index
+        # get node feats for each bonded pair of atoms
+        node_is_fs, node_js_fs = node_feats[node_is], node_feats[node_js]
+        edge_in = torch.cat([node_is_fs, node_js_fs, edge_attr], dim = 1)
+        return self.edge_mlp(edge_in)
+    
+    def coord_model(self, edge_index, edge_attr, coords):
+        # get radially normed coord differences (i.e. bond lengths)
+        # normed bond lengths * coord_mlp(edges)
+        _, coord_diffs = self.coord_to_radial(edge_index, coords)
+        atom_is, _ = edge_index
+        trans = coord_diffs * self.coord_mlp(edge_attr)
+        agg = unsorted_segment_sum(trans, atom_is, coords.size(0))
+        coords += agg
+        return coords
+
+    def coord_to_radial(self, edge_index, coords):
+        # calc coordinate differences between bonded atoms (i.e. bond lengths)
+        atom_is, atom_js = edge_index
+        coord_diffs = coords[atom_is] - coords[atom_js]
+        # normalise coords, TODO: alternative coord_norm as func or class
+        radial = torch.sum((coord_diffs)**2, 1).unsqueeze(1)
+        norm = torch.sqrt(radial) + 1
+        normed_coord_diffs = coord_diffs / norm
+        return radial, normed_coord_diffs
+    
+    def forward(self, node_feats, edge_index, edge_attr, coords):
+        edge_out = self.edge_model(node_feats, edge_index, edge_attr, coords)
+        node_out = self.node_model(node_feats, edge_index, edge_attr, coords)
+        coord_out = self.coord_model()
+        return node_out, edge_out, coord_out
 
 
 
