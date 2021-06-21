@@ -11,8 +11,6 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
     result.scatter_add_(0, row, edge_attr) # adds all values from tensor other int self at indices
     return result
 
-# TODO:adj matrix needs to be of max num nodes length
-
 class NodeEdge_AE(nn.Module):
 
     def __init__(self, in_node_nf = 11, in_edge_nf = 4, h_nf = 4, out_nf = 4, emb_nf = 2, act_fn = nn.ReLU(), device = 'cpu'):
@@ -208,10 +206,6 @@ def test_ne_ae(ne_ae, loader):
         res['total_loss_arr'].append(total_loss.item())
     
     return res['total_loss'] / res['counter'], res
-
-
-
-
 
 # could just add train/test tags in original func as mostly same funcs
 # TODO: remove opt
