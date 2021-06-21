@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
 
+# basically lifted from original egnn: https://github.com/vgsatorras/egnn/
+
 def unsorted_segment_sum(edge_attr, row, num_segments):
     result_shape = (num_segments, edge_attr.size(1))
     result = edge_attr.new_full(result_shape, 0) # init empty result tensor
@@ -27,7 +29,7 @@ class NodeEdgeCoord_AE(nn.Module):
         # coord params?
 
         # encoder
-        necl = NodeEdgeCoord_Layer(in_node_nf = in_node_nf, in_edge_nf = in_edge_nf, in_edge_coord_nf = 3,
+        necl = NodeEdgeCoord_Layer(in_node_nf = in_node_nf, in_edge_nf = in_edge_nf,
                                    h_nf = h_nf, out_nf = out_nf, act_fn = act_fn)
         self.add_module("NodeEdgeCoord", necl)
         # final emb for node and edge
@@ -38,25 +40,64 @@ class NodeEdgeCoord_AE(nn.Module):
     
     def forward(self, node_feats, edge_index, edge_attr, coords):
         # encode then decode
-        pass
+        node_emb, edge_emb, coord_out = self.encode(node_feats, edge_index, edge_attr, coords)
+        recon_node_fs, recon_edge_fs, adj_pred = self.decode(node_emb, edge_emb)
+        return node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out
 
-    def encode(self):
-        pass
+    def encode(self, node_feats, edge_index, edge_attr, coords):
+        node_out, edge_out, coord_out = self._modules["NodeEdgeCoord"](node_feats, edge_index, edge_attr, coords)
+        node_emb = self.fc_node_emb(node_out)
+        edge_emb = self.fc_edge_emb(edge_out)
+        return node_emb, edge_emb, coord_out
 
-    def decode(self):
-        pass
+    ### TODO: these decode funcs are exactly the same as NodeEdge - maybe worth creating base class of both
+    
+    def decode(self, node_emb, edge_emb):
+        # decode to edge_feats, node_feats, adj
+        recon_node_fs = self.decode_to_node_fs(node_emb)
+        recon_edge_fs = self.decode_to_edge_fs(edge_emb)
+        adj_pred = self.decode_to_adj(node_emb)
+        return recon_node_fs, recon_edge_fs, adj_pred
 
     def decode_to_node_fs(self, node_emb):
-        pass
+        # simple linear layer from node embedding to node features
+        emb_to_fs = nn.Linear(self.emb_nf, self.in_node_nf)
+        recon_node_fs = emb_to_fs(node_emb)
+        return recon_node_fs
 
-    def decode_to_edge_fs(self):
-        pass        
+    def decode_to_edge_fs(self, edge_emb):
+        # simple linear layer from edge embedding to edge features
+        emb_to_fs = nn.Linear(self.emb_nf, self.in_edge_nf)
+        recon_edge_fs = emb_to_fs(edge_emb)
+        return recon_edge_fs
 
-    def decode_to_adj(self):
-        pass
+    def decode_to_adj(self, x, W = 3, b = -1, linear_sig = True, remove_diag = True):
+                # num_nodes dim: [num_nodes, 2]
+        # use number of nodes in batch as adj matrix dimensions (obviously!)
+        # generate differences between node embeddings as adj matrix
+        # W, b: weights and biases for linear layer. push nodes thru linear layer at end
+        # TODO: rn, decode to adj matrix. also want to decode to original node_feats
+        # TODO: is this basically just: torch.sigmoid(torch.matmul(x, x.t()))?
+        # need to decode to adj and nodes
 
-    def decode_to_coords(self):
-        pass
+        x_a = x.unsqueeze(0) # dim: [1, num_nodes, 2]
+        x_b = torch.transpose(x_a, 0, 1) # dim: [num_nodes, 1, 2], t.t([_, dim to t, dim to t])
+
+        X = (x_a - x_b) ** 2  # dim: [num_nodes, num_nodes, 2]
+        
+        num_nodes = x.size(0) # num_nodes (usually as number of nodes in batch)
+        X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
+
+        # (lin_sig or not) layer, dim=1 sums to dim=[num_nodes^2]
+        # gives porbabilistic adj matrix
+        X = torch.sigmoid(W * torch.sum(X, dim = 1) + b) if linear_sig else torch.sum(X, dim = 1)
+
+        adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
+        if remove_diag: # TODO: the pyg method adds self-loops, what do I want?
+            adj_pred = adj_pred * (1 - torch.eye(num_nodes).to(self.device))
+        
+        return adj_pred
+
 
 class NodeEdge_AE(nn.Module):
 
@@ -141,7 +182,7 @@ class NodeEdge_AE(nn.Module):
 
 class NodeEdgeCoord_Layer(nn.Module):
     
-    def __init__(self, in_node_nf, in_edge_nf, in_edge_coord_nf, h_nf, out_nf, bias = True, act_fn = nn.ReLU()):
+    def __init__(self, in_node_nf, in_edge_nf, h_nf, out_nf, bias = True, act_fn = nn.ReLU()):
 
         super(NodeEdgeCoord_Layer, self).__init__()
 
@@ -149,41 +190,49 @@ class NodeEdgeCoord_Layer(nn.Module):
 
         # setting feature and mlp dimensions
         out_edge_nf = out_nf
-        in_node_mlp_nf = in_node_nf + out_edge_nf # should be equal to node_feats + agg + coords
-        in_edge_mlp_nf = (in_node_nf * 2) + in_edge_nf + in_edge_coord_nf
-        in_coord_mlp_nf = in_edge_coord_nf
+        coord_dim = 3
+        radial_dim = 1
+        h_coord_nf = radial_dim * 2 # arbitrary, just between num_edge_fs and 1
 
+        # mlp input dims
+        in_node_mlp_nf = in_node_nf + out_edge_nf + coord_dim # node_feats + agg + coords
+        in_edge_mlp_nf = (in_node_nf * 2) + in_edge_nf + radial_dim
+        in_coord_mlp_nf = in_edge_nf # just the number of edge features
+
+        # node mlp
         self.node_mlp = nn.Sequential(nn.Linear(in_node_mlp_nf, h_nf, bias = bias),
                                       act_fn,
                                       nn.Linear(h_nf, out_nf, bias = bias))
 
-
+        # edge mlp
         self.edge_mlp = nn.Sequential(nn.Linear(in_edge_mlp_nf, h_nf, bias = bias),
                                       act_fn,
                                       nn.Linear(h_nf, out_nf, bias = bias))
         
-        # no bias, TODO: what are dims? 3 for xyz?
-        self.coord_mlp = nn.Sequential(nn.Linear(in_coord_mlp_nf, h_nf),
-                                       act_fn,
-                                       nn.Linear(h_nf, out_nf))
+        # coord mlp: no bias, final layer has xavier_uniform init [following orig]
+        layer = nn.Linear(h_coord_nf, radial_dim, bias = False)
+        torch.nn.init.xavier_uniform_(layer.weight, gain=0.001)
+        self.coord_mlp = nn.Sequential(nn.Linear(in_coord_mlp_nf, h_coord_nf), nn.ReLU(), layer)
     
     def node_model(self, node_feats, edge_index, edge_attr, coords):
+        # NOTE: edge_attr here is actually edge_mlp(original edge_attr)
+        # NOTE: currently using coords as feature... maybe bad idea. doesn't in original.
         node_is, _ = edge_index
         agg = unsorted_segment_sum(edge_attr, node_is, node_feats.size(0))
         node_in = torch.cat([node_feats, agg, coords], dim = 1)
         return self.node_mlp(node_in)
     
-    def edge_model(self, node_feats, edge_index, edge_attr, coords):
+    def edge_model(self, node_feats, edge_index, edge_attr, radial):
         node_is, node_js = edge_index
         # get node feats for each bonded pair of atoms
         node_is_fs, node_js_fs = node_feats[node_is], node_feats[node_js]
-        edge_in = torch.cat([node_is_fs, node_js_fs, edge_attr], dim = 1)
+        edge_in = torch.cat([node_is_fs, node_js_fs, edge_attr, radial], dim = 1)
         return self.edge_mlp(edge_in)
     
-    def coord_model(self, edge_index, edge_attr, coords):
-        # get radially normed coord differences (i.e. bond lengths)
-        # normed bond lengths * coord_mlp(edges)
-        _, coord_diffs = self.coord_to_radial(edge_index, coords)
+    def coord_model(self, edge_index, edge_attr, coords, coord_diffs):
+        # radially normed coord differences (i.e. bond lengths) * coord_mlp(edges)
+        # == normed bond lengths * edge_out
+        # NOTE: edge_attr here is actually edge_mlp(original edge_attr)
         atom_is, _ = edge_index
         trans = coord_diffs * self.coord_mlp(edge_attr)
         agg = unsorted_segment_sum(trans, atom_is, coords.size(0))
@@ -201,11 +250,13 @@ class NodeEdgeCoord_Layer(nn.Module):
         return radial, normed_coord_diffs
     
     def forward(self, node_feats, edge_index, edge_attr, coords):
-        edge_out = self.edge_model(node_feats, edge_index, edge_attr, coords)
-        node_out = self.node_model(node_feats, edge_index, edge_attr, coords)
-        coord_out = self.coord_model()
+        # maybe shouldn't be using coords in node_out
+        # ideally would want to use node and edge features for final coords?
+        radial, coord_diffs = self.coord_to_radial(edge_index, coords)
+        edge_out = self.edge_model(node_feats, edge_index, edge_attr, coords, radial)
+        coord_out = self.coord_model(edge_index, edge_out, coords, coord_diffs)
+        node_out = self.node_model(node_feats, edge_index, edge_out, coord_out)
         return node_out, edge_out, coord_out
-
 
 
 class NodeEdge_Layer(nn.Module):
