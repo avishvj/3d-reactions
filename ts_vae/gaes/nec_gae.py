@@ -266,78 +266,29 @@ def test_nec_ae(nec_ae, loader):
     
     return res['total_loss'] / res['counter'], res
 
-def test_ne_ae(ne_ae, loader):
-    
-    res = {'total_loss': 0, 'counter': 0, 'total_loss_arr': [], 
-           'node_recon_loss_arr': [], 'edge_recon_loss_arr': [], 'adj_loss_arr': []}
-    
-    for i, rxn_batch in enumerate(loader):
+def main(epochs = 20, test_interval = 5):
+    final_res = {'epochs': [], 'train_loss_arr': [], 'train_res_arr': [], 
+                'test_loss_arr': [], 'test_res_arr': [], 'best_test': 1e10, 'best_epoch': 0}
+
+    # nec_gae.reset_parameters()
+
+    for epoch in range(1, epochs + 1):
         
-        ne_ae.eval()
+        train_loss, train_res = train_nec_ae(nec_ae, nec_opt, train_loaders['r'])
+        final_res['train_loss_arr'].append(train_loss)
+        final_res['train_res_arr'].append(train_res)
+        print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
         
-        # gen node emb, edge emb, adj
-        node_feats, edge_index, edge_attr = rxn_batch.x, rxn_batch.edge_index, rxn_batch.edge_attr
-        batch_size, batch_vec = len(rxn_batch.idx), rxn_batch.batch
-        node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred = ne_ae(node_feats, edge_index, edge_attr)
-
-        # ground truth values
-        adj_gt = to_dense_adj(edge_index).squeeze(dim = 0)
-        assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape! \
-                GT shape: {adj_gt.shape}, Pred shape: {adj_pred.shape}, Batch size: {batch_size}, \
-                   Node fs shape: {node_feats.shape} "
-
-        # losses and opt step
-        node_recon_loss = F.mse_loss(recon_node_fs, node_feats)
-        edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr)
-        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt)
-        total_loss = node_recon_loss + edge_recon_loss + adj_loss
-
-        # record batch results
-        res['total_loss'] += total_loss.item() * batch_size
-        res['counter'] += batch_size
-        res['node_recon_loss_arr'].append(node_recon_loss.item())
-        res['edge_recon_loss_arr'].append(edge_recon_loss.item())
-        res['adj_loss_arr'].append(adj_loss.item())
-        res['total_loss_arr'].append(total_loss.item())
-    
-    return res['total_loss'] / res['counter'], res
-
-# could just add train/test tags in original func as mostly same funcs
-# TODO: remove opt
-def test_node_ae(node_ae, opt, loader):
-    
-    res = {'loss': 0, 'counter': 0, 'loss_arr': [], 'adj_loss_arr': [], 'node_recon_loss_arr': []}
-
-    for i, rxn_batch in enumerate(loader):
-
-        # test mode
-        node_ae.eval()
-
-        # generate node embeddings and predicted adj matrix
-        node_feats, edge_index, edge_attr = rxn_batch.x, rxn_batch.edge_index, rxn_batch.edge_attr
-        batch_size, batch_vec = len(rxn_batch.idx), rxn_batch.batch
-        node_emb, recon_node_fs, adj_pred = node_ae(node_feats, edge_index, edge_attr)
-
-        # ground truth adj matrix; if add batch vec, you get two, if add edge_attr get x4 in dim
-        adj_gt = to_dense_adj(edge_index = edge_index).squeeze(dim = 0)
-        assert adj_gt.shape == adj_pred.shape, "Your adjacency matrices don't have the same shape!"
+        if epoch % test_interval == 0:
         
-        # node recon loss
-        node_recon_loss = F.mse_loss(recon_node_fs, node_feats)
-
-        # adj loss
-        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt)
-
-        # simple combination of loss right now
-        loss = node_recon_loss + adj_loss
-
-        # record batch results
-        res['loss'] += loss.item() * batch_size
-        res['counter'] += batch_size
-        res['adj_loss_arr'].append(adj_loss.item())
-        res['node_recon_loss_arr'].append(node_recon_loss.item())
-        res['loss_arr'].append(loss.item())
+            test_loss, test_res = test_nec_ae(nec_ae, test_loaders['r'])
+            final_res['test_loss_arr'].append(test_loss)
+            final_res['test_res_arr'].append(test_res)
+            print(f'===== Testing epoch: {epoch:03d}, Loss: {test_loss:.4f} ===== \n')
+            
+            if test_loss < final_res['best_test']:
+                final_res['best_test'] = test_loss
+                final_res['best_epoch'] = epoch
     
-    return res['loss'] / res['counter'], res
-
+    return final_res
 
