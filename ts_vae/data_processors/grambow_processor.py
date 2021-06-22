@@ -1,435 +1,285 @@
-from numpy.core.fromnumeric import product
-from scipy.sparse import data
+# pytorch, pyscatter, pyg
+from numpy.lib.polynomial import polysub
 import torch
 import torch.nn.functional as F
 from torch_scatter import scatter
-from torch_geometric.data import InMemoryDataset, Data, DataLoader # , Data
-# from torch_geometric.data.data import Data
+from torch_geometric.data import InMemoryDataset, Data, DataLoader
+
+# rdkit
 from rdkit import Chem
 from rdkit.Chem.rdchem import HybridizationType
 from rdkit.Chem.rdchem import BondType as BT
+
+# other
 from tqdm import tqdm
-from enum import Enum
 
-# TEMP_MOLS_LIMIT = 842 * 2
-TEMP_MOLS_LIMIT = 30
 
-class GeometryFile(Enum):
-    """ Enum for indices corresponding to each reactant, transition state, product file. 
-        Use this ordering convention throughout the project.
-        TODO: give enums their own file.
+class OtherReactionTriple(Data):
+    # seeing if this works
+
+    def __init__(self, r = None, ts = None, p = None):
+        super(OtherReactionTriple, self).__init__()
+
+        # initial checks
+        if r and ts and p:
+            assert len(r.z) == len(ts.z) == len(p.z), \
+                "The mols have different number of atoms."
+            assert r.idx == ts.idx == p.idx, \
+                "The IDs of each mol don't match. Are you sure your data processing is correct?"
+            self.num_atoms = len(r.z)
+            self.idx = r.idx
+
+            # reactant
+            self.edge_attr_r = r.edge_attr
+            self.edge_index_r = r.edge_index
+            self.pos_r = r.pos
+            self.x_r = r.x
+
+            # ts
+            self.edge_attr_ts = ts.edge_attr
+            self.edge_index_ts = ts.edge_index
+            self.pos_ts = ts.pos
+            self.x_ts = ts.x
+
+            # product
+            self.edge_attr_p = p.edge_attr
+            self.edge_index_p = p.edge_index
+            self.pos_p = p.pos
+            self.x_p = p.x
+        else:
+            NameError("Reactant, TS, or Product not defined for this reaction.")
+        
+        # all molecules as Data(edge_attr, edge_index, idx, pos, x, z)
+        self.r = r
+        self.ts = ts
+        self.p = p
+
+    
+    def __inc__(self, key, value):
+        if key == 'r':
+            return self.r.x.size(0)
+        if key == 'ts':
+            return self.ts.x.size(0)
+        if key == 'p':
+            return self.p.x.size(0)
+        else:
+            return super().__inc__(key, value)
+    
+    def __cat_dim__(self, key, item):
+        if key == 'r' or key == 'ts' or key == 'p':
+            return None
+        else:
+            return super().__cat_dim__(key, item)
+
+
+class ReactionTriple(Data):
+    """ Contains graph representation (as PyTorch Geometric Data() class) for reactant, TS, and product in a reaction trajectory.
+    Notes:
+        - Any params passed in must be set to default = None so that PyTorch's collate function works correctly. This collate fn
+          helps us batch different graphs, too.
+        - Key names are the variable names for params passed into __init__(). These are the same keys used for batching.
+        - Different number of atoms could be strange when batching.
+    TODO:
+        - Functions for reaction core and data vis: rxn centre change magnitude (for standard/interatomic/etc.) -> precision required.
+        - Atomic features to radial/interatomic/z-matrix, etc. Abstract class may be better.
+        - Move number of atoms (and other checks?) into their own function.
+        - Dataset properties: functions for rdkit molecule properties to compare
+        - Identifying 3D bias in dataset?
     """
-    train_r = 0
-    train_ts = 1
-    train_p = 2
-    test_r = 3
-    test_ts = 4
-    test_p = 5
 
-class ConcatGeometryFile(Enum):
-    """ Enum for indices corresponding to each reactant, transition state, product file. 
-        Use this ordering convention throughout the project.
-        TODO: give enums their own file.
-    """
-    train_concat_rp = 0
-    train_ts = 1
-    test_concat_rp = 2
-    test_ts = 3
+    def __init__(self, r = None, ts = None, p = None):
+        super(ReactionTriple, self).__init__()
+        
+        # all molecules
+        self.r = r
+        self.ts = ts
+        self.p = p
 
-class FullFile(Enum):
-    reactants = 0
-    ts = 1
-    products = 2
+        if r and ts and p:
+            assert len(r.z) == len(ts.z) == len(p.z)
+            self.num_atoms = len(r.z)
+        else:
+            NameError("Reactant, TS, or Product not defined for this reaction.")
+
+    def __inc__(self, key, value):
+        """ Defines incremental count between two consecutive graph attributes.
+        Notes:
+            - Helps with batching individual parts of the reaction.
+        
+        Parameters
+        ----------
+        key : str 
+            Either r, p, ts. Use this in follow batch to learn on this set of the trajectory.
+        """
+        if key == 'r':
+            return self.r.x.size(0)
+            # return self.r.edge_index.size(0)
+        elif key == 'ts':
+            return self.ts.x.size(0)
+        elif key == 'p':
+            return self.p.x.size(0)
+        else:
+            return super().__inc__(key, value)
 
 class ReactionDataset(InMemoryDataset):
-    """ Creates instance of reaction dataset. 
-        To add a new file: create file in data/raw, add to GeometryFile enum, add to func raw_file_names(), and add to processed_file_names().
-        TODO: remove TEMP_MOLS_LIMIT.
-        TODO: hackiness of if/elif in init(), processed_file_names(), process() -> is abstract class poss with InMemoryDataset?
-        TODO: was this necessary? for concatenation, you could just train each geometry file after another, no?
+    """ Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product).
+    TODO:
+        - Remove TEMP_MOLS_LIMIT
+        - get_tracker(): factory method for wandb tracker log [ref pyg 3D]
     """
-    types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
-    bonds = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
 
-    def __init__(self, root, geo_file, dataset_type, transform=None, pre_transform=None):
-        self.dataset_type = dataset_type
-        super(ReactionDataset, self).__init__(root, transform, pre_transform)
-        
-        self.geo_file = geo_file        
+    TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
+    BONDS = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
+    TEMP_MOLS_LIMIT = 30
 
-        if dataset_type == 'individual':
-            self.data, self.slices = torch.load(self.processed_paths[GeometryFile[geo_file].value]) # ind
-        
-        elif dataset_type == 'concat':
-            self.data, self.slices = torch.load(self.processed_paths[ConcatGeometryFile[geo_file].value]) # concat
-        
-        if dataset_type == 'full':
-            self.data, self.slices = torch.load(self.processed_paths[FullFile[geo_file].value]) # full
+    def __init__(self, root_folder, transform = None, pre_transform = None):
 
+        self.rxn_data = None
+        super(ReactionDataset, self).__init__(root_folder, transform, pre_transform)
+
+        # keep individual geometries stored in case
+        self.r_data, self.r_slices = torch.load(self.processed_paths[0])
+        self.ts_data, self.ts_slices = torch.load(self.processed_paths[1]) 
+        self.p_data, self.p_slices = torch.load(self.processed_paths[2])
+        
+        # key data
+        self.data, self.slices = torch.load(self.processed_paths[3])
+        
     @property
     def raw_file_names(self):
-        """ Same for all dataset types. """
-        return ['/raw/train_reactants.sdf', '/raw/train_ts.sdf', '/raw/train_products.sdf', '/raw/test_reactants.sdf', '/raw/test_ts.sdf', '/raw/test_products.sdf']
-    
+        return ['/raw/train_reactants.sdf', '/raw/train_ts.sdf', '/raw/train_products.sdf', 
+                        '/raw/test_reactants.sdf', '/raw/test_ts.sdf', '/raw/test_products.sdf']
+
     @property
     def processed_file_names(self):
-        """ If files already in processed folder, this processing is skipped. 
-            Convenient for accessing the individual processed files without having to recreate them each time. 
-        """
-        if self.dataset_type == "individual":
-            return ['train_r.pt', 'train_ts.pt', 'train_p.pt', 'test_r.pt', 'test_ts.pt', 'test_p.pt']
-        
-        elif self.dataset_type == "concat":
-            return ['train_concat_rp.pt', 'train_ts.pt', 'test_concat_rp.pt', 'test_ts.pt']
-        
-        elif self.dataset_type == "full":
-            return ['reactants.pt', 'ts.pt', 'products.pt']
-
-        else:
-            raise ValueError('The dataset type you entered does not exist... try again with \'individual\' or \'concat\' or \'full\'.')
-
+        """ If files already in processed folder, this func means we don't have to recreate them. """
+        return ['reactants.pt', 'ts.pt', 'products.pt', 'full.pt']
+    
     def download(self):
         """ Not required in this project. """
         pass
-    
-    def process_geometry_file(self, geometry_file, list = None):
-        """ Code mostly lifted from QM9 dataset creation https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/datasets/qm9.html 
-            Transforms molecules to their atom features and adjacency lists.
-        """
-        
-        limit = TEMP_MOLS_LIMIT
-
-        data_list = list if list else []
-        full_path = self.root + geometry_file
-        geometries = Chem.SDMolSupplier(full_path, removeHs=False, sanitize=False)
-
-        # get atom and edge features for each geometry
-        for i, mol in enumerate(tqdm(geometries)):
-
-            # temp soln cos of split edge memory issues
-            if i == limit:
-                break
-            
-            N = mol.GetNumAtoms()
-            # get atom positions as matrix w shape [num_nodes, num_dimensions] = [num_atoms, 3]
-            atom_data = geometries.GetItemText(i).split('\n')[4:4 + N] 
-            atom_positions = [[float(x) for x in line.split()[:3]] for line in atom_data]
-            atom_positions = torch.tensor(atom_positions, dtype=torch.float)
-            # all the features
-            type_idx = []
-            atomic_number = []
-            aromatic = []
-            sp = []
-            sp2 = []
-            sp3 = []
-            num_hs = []
-
-            # atom/node features
-            for atom in mol.GetAtoms():
-                type_idx.append(self.types[atom.GetSymbol()])
-                atomic_number.append(atom.GetAtomicNum())
-                aromatic.append(1 if atom.GetIsAromatic() else 0)
-                hybridisation = atom.GetHybridization()
-                sp.append(1 if hybridisation == HybridizationType.SP else 0)
-                sp2.append(1 if hybridisation == HybridizationType.SP2 else 0)
-                sp3.append(1 if hybridisation == HybridizationType.SP3 else 0)
-                # !!! should do the features that lucky does: whether bonded, 3d_rbf
-
-            # bond/edge features
-            row, col, edge_type = [], [], []
-            for bond in mol.GetBonds(): 
-                start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-                row += [start, end]
-                col += [end, start]
-                # edge type for each bond type; *2 because both ways
-                edge_type += 2 * [self.bonds[bond.GetBondType()]]
-            # edge_index is graph connectivity in COO format with shape [2, num_edges]
-            edge_index = torch.tensor([row, col], dtype=torch.long)
-            edge_type = torch.tensor(edge_type, dtype=torch.long)
-            # edge_attr is edge feature matrix with shape [num_edges, num_edge_features]
-            edge_attr = F.one_hot(edge_type, num_classes=len(self.bonds)).to(torch.float) 
-
-            # order edges based on combined ascending order
-            perm = (edge_index[0] * N + edge_index[1]).argsort() # TODO
-            edge_index = edge_index[:, perm]
-            edge_type = edge_type[perm]
-            edge_attr = edge_attr[perm]
-
-            row, col = edge_index
-            z = torch.tensor(atomic_number, dtype=torch.long)
-            hs = (z == 1).to(torch.float) # hydrogens
-            num_hs = scatter(hs[row], col, dim_size=N).tolist() # scatter helps with one-hot
-            
-            x1 = F.one_hot(torch.tensor(type_idx), num_classes=len(self.types))
-            x2 = torch.tensor([atomic_number, aromatic, sp, sp2, sp3, num_hs], dtype=torch.float).t().contiguous()
-            x = torch.cat([x1.to(torch.float), x2], dim=-1)
-
-            data = Data(x=x, z=z, pos=atom_positions, edge_index=edge_index, edge_attr=edge_attr, idx=i)
-            
-            data_list.append(data)
-
-        return data_list
-        
 
     def process(self):
-        """ Processes each of the six geometry files and appends to a list. """
-
-        if self.dataset_type == "individual":
-            
-            for g_idx, geometry_file in enumerate(self.raw_file_names): 
-                data_list = self.process_geometry_file(geometry_file)
-                torch.save(self.collate(data_list), self.processed_paths[g_idx]) 
-        
-        elif self.dataset_type == "concat":
-
-            # concat train r and p
-            train_rp = []
-            train_rp = self.process_geometry_file('/raw/train_reactants.sdf', train_rp)
-            train_rp = self.process_geometry_file('/raw/train_products.sdf', train_rp) 
-            torch.save(self.collate(train_rp), self.processed_paths[0])
-
-            # train ts
-            train_ts = self.process_geometry_file('/raw/train_ts.sdf')
-            torch.save(self.collate(train_ts), self.processed_paths[1])
-
-            # concat test r and p
-            test_rp = []
-            test_rp = self.process_geometry_file('/raw/test_reactants.sdf', test_rp)
-            test_rp = self.process_geometry_file('/raw/test_products.sdf', test_rp) 
-            torch.save(self.collate(test_rp), self.processed_paths[2])
-
-            # test ts
-            test_ts = self.process_geometry_file('/raw/test_ts.sdf')
-            torch.save(self.collate(test_ts), self.processed_paths[3])
-
-        elif self.dataset_type == "full":
-
-            # concat train r and test r
-            reactants = []
-            reactants = self.process_geometry_file('/raw/train_reactants.sdf', reactants)
-            reactants = self.process_geometry_file('/raw/test_reactants.sdf', reactants) 
-            torch.save(self.collate(reactants), self.processed_paths[0])
-
-            # concat train ts and test ts
-            ts = []
-            ts = self.process_geometry_file('/raw/train_ts.sdf', ts)
-            ts = self.process_geometry_file('/raw/test_ts.sdf', ts) 
-            torch.save(self.collate(ts), self.processed_paths[1])
-
-            # concat train p and test p
-            products = []
-            products = self.process_geometry_file('/raw/train_products.sdf', products)
-            products = self.process_geometry_file('/raw/test_products.sdf', products) 
-            torch.save(self.collate(products), self.processed_paths[2])
-
-
-class RxnDataset(InMemoryDataset):
-    """ Creates instance of reaction dataset. 
-        To add a new file: create file in data/raw, add to GeometryFile enum, add to func raw_file_names(), and add to processed_file_names().
-        TODO: remove TEMP_MOLS_LIMIT.
-        TODO: hackiness of if/elif in init(), processed_file_names(), process() -> is abstract class poss with InMemoryDataset?
-        TODO: was this necessary? for concatenation, you could just train each geometry file after another, no?
-    """
-    types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
-    bonds = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
-
-    def __init__(self, root, transform=None, pre_transform=None):
-        super(RxnDataset, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])     
-
-    @property
-    def raw_file_names(self):
-        return ['/raw/train_reactants.sdf', '/raw/train_ts.sdf', '/raw/train_products.sdf', '/raw/test_reactants.sdf', '/raw/test_ts.sdf', '/raw/test_products.sdf']
-    
-    @property
-    def processed_file_names(self):
-        """ If files already in processed folder, this processing is skipped. 
-            Convenient for accessing the individual processed files without having to recreate them each time. 
+        """ Process reactants, TSs, and products. Store in their own files as well as together as reactions. 
+        Notes:
+            - Because of initial format of data (given as train and test), we pass the list of geometries forward.
         """
-        return ['reactions.pt']
 
-    def download(self):
-        """ Not required in this project. """
-        pass
-    
-    def process_geometry_file(self, geometry_file, list = None):
-        """ Code mostly lifted from QM9 dataset creation https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/datasets/qm9.html 
-            Transforms molecules to their atom features and adjacency lists.
-        """
-        
-        limit = TEMP_MOLS_LIMIT
-
-        data_list = list if list else []
-        full_path = self.root + geometry_file
-        geometries = Chem.SDMolSupplier(full_path, removeHs=False, sanitize=False)
-
-        # get atom and edge features for each geometry
-        for i, mol in enumerate(tqdm(geometries)):
-
-            # temp soln cos of split edge memory issues
-            if i == limit:
-                break
-            
-            N = mol.GetNumAtoms()
-            # get atom positions as matrix w shape [num_nodes, num_dimensions] = [num_atoms, 3]
-            atom_data = geometries.GetItemText(i).split('\n')[4:4 + N] 
-            atom_positions = [[float(x) for x in line.split()[:3]] for line in atom_data]
-            atom_positions = torch.tensor(atom_positions, dtype=torch.float)
-            # all the features
-            type_idx = []
-            atomic_number = []
-            aromatic = []
-            sp = []
-            sp2 = []
-            sp3 = []
-            num_hs = []
-
-            # atom/node features
-            for atom in mol.GetAtoms():
-                type_idx.append(self.types[atom.GetSymbol()])
-                atomic_number.append(atom.GetAtomicNum())
-                aromatic.append(1 if atom.GetIsAromatic() else 0)
-                hybridisation = atom.GetHybridization()
-                sp.append(1 if hybridisation == HybridizationType.SP else 0)
-                sp2.append(1 if hybridisation == HybridizationType.SP2 else 0)
-                sp3.append(1 if hybridisation == HybridizationType.SP3 else 0)
-                # !!! should do the features that lucky does: whether bonded, 3d_rbf
-
-            # bond/edge features
-            row, col, edge_type = [], [], []
-            for bond in mol.GetBonds(): 
-                start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-                row += [start, end]
-                col += [end, start]
-                # edge type for each bond type; *2 because both ways
-                edge_type += 2 * [self.bonds[bond.GetBondType()]]
-            # edge_index is graph connectivity in COO format with shape [2, num_edges]
-            edge_index = torch.tensor([row, col], dtype=torch.long)
-            edge_type = torch.tensor(edge_type, dtype=torch.long)
-            # edge_attr is edge feature matrix with shape [num_edges, num_edge_features]
-            edge_attr = F.one_hot(edge_type, num_classes=len(self.bonds)).to(torch.float) 
-
-            # order edges based on combined ascending order
-            perm = (edge_index[0] * N + edge_index[1]).argsort() # TODO
-            edge_index = edge_index[:, perm]
-            edge_type = edge_type[perm]
-            edge_attr = edge_attr[perm]
-
-            row, col = edge_index
-            z = torch.tensor(atomic_number, dtype=torch.long)
-            hs = (z == 1).to(torch.float) # hydrogens
-            num_hs = scatter(hs[row], col, dim_size=N).tolist() # scatter helps with one-hot
-            
-            x1 = F.one_hot(torch.tensor(type_idx), num_classes=len(self.types))
-            x2 = torch.tensor([atomic_number, aromatic, sp, sp2, sp3, num_hs], dtype=torch.float).t().contiguous()
-            x = torch.cat([x1.to(torch.float), x2], dim=-1)
-
-            data = Data(x=x, z=z, pos=atom_positions, edge_index=edge_index, edge_attr=edge_attr, idx=i)
-            
-            data_list.append(data)
-
-        return data_list
-    
-    def process(self):
-        
-        # concat train r and test r
+        # concat original train and test reactants
         reactants = []
         reactants = self.process_geometry_file('/raw/train_reactants.sdf', reactants)
         reactants = self.process_geometry_file('/raw/test_reactants.sdf', reactants)
 
-        # concat train ts and test ts
-        ts = []
-        ts = self.process_geometry_file('/raw/train_ts.sdf', ts)
-        ts = self.process_geometry_file('/raw/test_ts.sdf', ts) 
-
-        # concat train p and test p
+        # concat train and test ts
+        tss = []
+        tss = self.process_geometry_file('/raw/train_ts.sdf', tss)
+        tss = self.process_geometry_file('/raw/test_ts.sdf', tss) 
+        
+        # concat train and test products
         products = []
         products = self.process_geometry_file('/raw/train_products.sdf', products)
         products = self.process_geometry_file('/raw/test_products.sdf', products) 
-
-        assert len(reactants) == len(ts) == len(products)
-
-        print(type(reactants[0]), type(ts[0]), type(products[0]))
+        
+        assert len(reactants) == len(tss) == len(products)
 
         rxns = []
         for rxn_id in range(len(reactants)):
-            rxn = Triple(reactants[rxn_id], ts[rxn_id], products[rxn_id])
+            rxn = ReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
+            # rxn = OtherReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
             rxns.append(rxn)
+        self.rxn_data = rxns # spare rxn_data if funny business with main rxns
 
-        loader = DataLoader(rxns, batch_size = 2, follow_batch = ['x_r', 'x_ts', 'x_p'])
-        
-        
-        print(type(rxns[0]))
-        print(rxns[0].__class__())
+        torch.save(self.collate(reactants), self.processed_paths[0])
+        torch.save(self.collate(tss), self.processed_paths[1])
+        torch.save(self.collate(products), self.processed_paths[2])
+        torch.save(self.collate(rxns), self.processed_paths[3])
 
-        # torch.save(self.collate(rxns), self.processed_paths[0])
-
-class Triple(Data):
-    def __init__(self, r, ts, p):
-        super(Triple, self).__init__()
-        self.r = r
-        self.edge_index_r = r.edge_index
-        self.ts = ts
-        self.edge_index_ts = ts.edge_index
-        self.p = p
-        self.edge_index_p = p.edge_index
-
-    def __inc__(self, key, value):
-        if key == 'r':
-            return self.r.edge_index.size(0)
-        elif key == 'ts':
-            return self.ts.edge_index.size(0)
-        elif key == 'p':
-            return self.p.edge_index.size(0)
-        else:
-            return super().__inc__(key, value)
-
-
-class ReactionTriple(Data):
-    def __init__(self, edge_index_r, x_r, edge_index_ts, x_ts, edge_index_p, x_p):
-        super(ReactionTriple, self).__init__()
-        self.edge_index_r = edge_index_r
-        self.x_r = x_r
-        self.edge_index_ts = edge_index_ts # note, this may only work for non-disjoint graphs?
-        self.x_ts = x_ts
-        self.edge_index_p = edge_index_p
-        self.x_p = x_p
-    
-    def __inc__(self, key, value):
-        """ Defines incremental count between two consecutive graph attributes.
-            edge_index_[...] should be increased by number of nodes in coressponding graph G_[...]. 
+    def process_geometry_file(self, geometry_file, current_list = None):
+        """ Transforms molecules to their atom features and adjacency lists.
+        Notes:
+            - Code mostly lifted from PyG QM9 dataset creation https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/datasets/qm9.html 
         """
-        if key == 'edge_index_r':
-            return self.x_r.size(0)
-        elif key == 'edge_index_ts':
-            return self.x_ts.size(0)
-        elif key == 'edge_index_p':
-            return self.x_p.size(0)
-        else:
-            return super().__inc__(key, value)
+        data_list = current_list if current_list else []
+        counted = len(data_list)
+        full_path = self.root + geometry_file
+        geometries = Chem.SDMolSupplier(full_path, removeHs = False, sanitize = False)
+
+        # get atom and edge features for each geometry
+        for i, mol in enumerate(tqdm(geometries)):
+
+            # temp_soln cos of memory issues TODO: change
+            if i == self.TEMP_MOLS_LIMIT:
+                break
+
+            N = mol.GetNumAtoms()
+            # get atom positions as matrix w shape [num_nodes, num_dimensions] = [num_atoms, 3]
+            atom_data = geometries.GetItemText(i).split('\n')[4: 4+N]
+            atom_positions = [[float(x) for x in line.split()[:3]] for line in atom_data]
+            atom_positions = torch.tensor(atom_positions, dtype = torch.float)
+            # all the features
+            type_idx, atomic_number, aromatic = [], [], []
+            sp, sp2, sp3 = [], [], []
+            num_hs = []
+
+            # atom/node features
+            for atom in mol.GetAtoms():
+                type_idx.append(self.TYPES[atom.GetSymbol()])
+                atomic_number.append(atom.GetAtomicNum())
+                aromatic.append(1 if atom.GetIsAromatic() else 0)
+                hybridisation = atom.GetHybridization()
+                sp.append(1 if hybridisation == HybridizationType.SP else 0)
+                sp2.append(1 if hybridisation == HybridizationType.SP2 else 0)
+                sp3.append(1 if hybridisation == HybridizationType.SP3 else 0)
+                # TODO: lucky does: whether bonded, 3D_rbf
+            
+            # bond/edge features
+            row, col, edge_type = [], [], []
+            for bond in mol.GetBonds():
+                start, end = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+                row += [start, end]
+                col += [end, start]
+                # edge type for each bond type; *2 because both ways
+                edge_type += 2 * [self.BONDS[bond.GetBondType()]]
+            # edge_index is graph connectivity in COO format with shape [2, num_edges]
+            edge_index = torch.tensor([row, col], dtype = torch.long)
+            edge_type = torch.tensor(edge_type, dtype = torch.long)
+            # edge_attr is edge feature matrix with shape [num_edges, num_edge_features]
+            edge_attr = F.one_hot(edge_type, num_classes = len(self.BONDS)).to(torch.float)
+
+            # order edges based on combined ascending order
+            asc_order_perm = (edge_index[0] * N + edge_index[1]).argsort()
+            edge_index = edge_index[:, asc_order_perm]
+            edge_type = edge_type[asc_order_perm]
+            edge_attr = edge_attr[asc_order_perm]
+
+            row, col = edge_index
+            z = torch.tensor(atomic_number, dtype = torch.long)
+            hs = (z == 1).to(torch.float) # hydrogens
+            num_hs = scatter(hs[row], col, dim_size = N).tolist() # scatter helps with one-hot
+
+            x1 = F.one_hot(torch.tensor(type_idx), num_classes = len(self.TYPES))
+            x2 = torch.tensor([atomic_number, aromatic, sp, sp2, sp3, num_hs], dtype = torch.float).t().contiguous()
+            x = torch.cat([x1.to(torch.float), x2], dim = -1)
+
+            idx = counted + i 
+            mol_data = Data(x = x, z = z, pos = atom_positions, edge_index = edge_index, edge_attr = edge_attr, idx = idx)
+            data_list.append(mol_data)
         
-        
+        return data_list
+
+
         
 
 
-"""
-    # TODO: implement transforms of atomic features to interatomic distances, etc.
-    def coordinate_to_interatomic_dist():
-        # maybe generalise this function with a flag for different initial inputs
-            # e.g. interatomic distances, Z-matrix, nuclear charge, etc.
-        # if these are different enough, may be better to have this instance as an abstract class then have implementations for each matrix type
+
     
-    # TODO
-    def visualise_feature_dynamics(self):
-        # takes in reactants, ts, products; calculates reaction centre
-        # compare how reaction centre changes: by how much, what precision do we need?
-        # could do similar with interatomic distances
-        return
 
-    # not sure if necessary as can just iterate through
-    def dataset_properties():
-        # functions for rdkit molecule properties to compare
-        return
 
-    # other funcs: identifying 3D bias in dataset? perhaps need to take the original log files in to get a broader range of reactions
-"""
+
+
+
+
+
+
+
+

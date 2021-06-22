@@ -2,20 +2,10 @@ from rdkit import Chem
 import pymol
 import tempfile, os
 import numpy as np
-
-import torch
-
-
 from math import sqrt, pi
 
-
+import torch
 from torch_sparse import SparseTensor
-
-# what other TS properties do I need? syndags has good code for properties.
-
-# ts_gen have pymol render but one of their imports tempfile doesn't exist anymore?
-
-
 
 def reset(nn):
     def _reset(item):
@@ -28,6 +18,7 @@ def reset(nn):
                 _reset(item)
         else:
             _reset(nn)
+
 
 ### distance geometry funcs
 
