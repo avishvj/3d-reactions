@@ -33,9 +33,16 @@ class NodeEdgeCoord_AE(nn.Module):
                                    h_nf = h_nf, out_nf = out_nf, act_fn = act_fn)
         self.add_module("NodeEdgeCoord", necl)
         # final emb for node and edge
-        self.fc_node_emb = nn.Linear(out_nf, emb_nf)
+        self.node_out_to_emb_mlp = nn.Linear(out_nf, emb_nf)
         out_edge_nf = in_edge_nf
-        self.fc_edge_emb = nn.Linear(out_edge_nf, emb_nf)
+        self.edge_out_to_emb_mlp = nn.Linear(out_edge_nf, emb_nf)
+
+        # TODO: define all layers here
+
+        # decoder
+        self.emb_to_node_mlp = nn.Linear(emb_nf, in_node_nf)
+        self.emb_to_edge_mlp = nn.Linear(emb_nf, in_edge_nf)
+        # self.adj_mlp = nn.Linear()
 
         self.to(device)
     
@@ -47,8 +54,8 @@ class NodeEdgeCoord_AE(nn.Module):
 
     def encode(self, node_feats, edge_index, edge_attr, coords):
         node_out, edge_out, coord_out = self._modules["NodeEdgeCoord"](node_feats, edge_index, edge_attr, coords)
-        node_emb = self.fc_node_emb(node_out)
-        edge_emb = self.fc_edge_emb(edge_out)
+        node_emb = self.node_out_to_emb_mlp(node_out)
+        edge_emb = self.edge_out_to_emb_mlp(edge_out)
         return node_emb, edge_emb, coord_out
 
     ### TODO: these decode funcs are exactly the same as NodeEdge - maybe worth creating base class of both
@@ -62,18 +69,20 @@ class NodeEdgeCoord_AE(nn.Module):
 
     def decode_to_node_fs(self, node_emb):
         # simple linear layer from node embedding to node features
-        emb_to_fs = nn.Linear(self.emb_nf, self.in_node_nf)
-        recon_node_fs = emb_to_fs(node_emb)
-        return recon_node_fs
+        # emb_to_fs = nn.Linear(self.emb_nf, self.in_node_nf)
+        # recon_node_fs = emb_to_fs(node_emb)
+        # return recon_node_fs
+        return self.emb_to_node_mlp(node_emb)
 
     def decode_to_edge_fs(self, edge_emb):
         # simple linear layer from edge embedding to edge features
-        emb_to_fs = nn.Linear(self.emb_nf, self.in_edge_nf)
-        recon_edge_fs = emb_to_fs(edge_emb)
-        return recon_edge_fs
+        # emb_to_fs = nn.Linear(self.emb_nf, self.in_edge_nf)
+        # recon_edge_fs = emb_to_fs(edge_emb)
+        # return recon_edge_fs
+        return self.emb_to_edge_mlp(edge_emb)
 
     def decode_to_adj(self, x, W = 3, b = -1, linear_sig = True, remove_diag = True):
-                # num_nodes dim: [num_nodes, 2]
+        # num_nodes dim: [num_nodes, 2]
         # use number of nodes in batch as adj matrix dimensions (obviously!)
         # generate differences between node embeddings as adj matrix
         # W, b: weights and biases for linear layer. push nodes thru linear layer at end
@@ -90,7 +99,9 @@ class NodeEdgeCoord_AE(nn.Module):
         X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
 
         # (lin_sig or not) layer, dim=1 sums to dim=[num_nodes^2]
-        # gives porbabilistic adj matrix
+        # gives probabilistic adj matrix
+        # TODO: use real linear layer here so can train
+        # NOTE: W and b fixed. W shouldn't be scalar. should have been torch.sum(W+X, sum=1)
         X = torch.sigmoid(W * torch.sum(X, dim = 1) + b) if linear_sig else torch.sum(X, dim = 1)
 
         adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
@@ -206,10 +217,10 @@ def train_nec_ae(nec_ae, opt, loader):
                    Node fs shape: {node_feats.shape} "
 
         # losses and opt step
-        node_recon_loss = F.mse_loss(recon_node_fs, node_feats)
-        edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr)
-        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt)
-        coord_loss = F.mse_loss(coord_out, coords)
+        node_recon_loss = F.mse_loss(recon_node_fs, node_feats) # NOTE: gets worse...
+        edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr) # NOTE: seems fine
+        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # NOTE: almost no change
+        coord_loss = F.mse_loss(coord_out, coords) # NOTE: stays at zero
         total_loss = node_recon_loss + edge_recon_loss + adj_loss + coord_loss
         total_loss.backward()
         opt.step()
@@ -253,7 +264,8 @@ def test_nec_ae(nec_ae, loader):
         edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr)
         adj_loss = F.binary_cross_entropy(adj_pred, adj_gt)
         coord_loss = F.mse_loss(coord_out, coords)
-        total_loss = node_recon_loss + edge_recon_loss + adj_loss + coord_loss
+        # total_loss = node_recon_loss + edge_recon_loss + adj_loss + coord_loss
+        total_loss = adj_loss + coord_loss
 
         # record batch results
         res['total_loss'] += total_loss.item() * batch_size
@@ -266,7 +278,7 @@ def test_nec_ae(nec_ae, loader):
     
     return res['total_loss'] / res['counter'], res
 
-def main(epochs = 20, test_interval = 5):
+def main(nec_ae, nec_opt, train_loaders, test_loaders, epochs = 20, test_interval = 5):
     final_res = {'epochs': [], 'train_loss_arr': [], 'train_res_arr': [], 
                 'test_loss_arr': [], 'test_res_arr': [], 'best_test': 1e10, 'best_epoch': 0}
 
