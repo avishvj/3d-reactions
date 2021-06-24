@@ -25,8 +25,14 @@ class OtherReactionTriple(Data):
                 "The IDs of each mol don't match. Are you sure your data processing is correct?"
             assert len(r.z) == len(ts.z) == len(p.z), \
                 "The mols have different number of atoms."
+            assert r.x.size(1) == ts.x.size(1) == p.x.size(1), \
+                "You don't have the same number of atom features for each mol."
+            assert r.edge_attr.size(1) == ts.edge_attr.size(1) == p.edge_attr.size(1), \
+                "You don't have the same number of bond features for each mol."
             self.idx = r.idx
             self.num_atoms = len(r.z)
+            self.num_atom_fs = r.x.size(1)
+            self.num_bond_fs = r.edge_attr.size(1)
 
             # reactant
             self.edge_attr_r = r.edge_attr
@@ -125,7 +131,7 @@ class ReactionDataset(InMemoryDataset):
 
     TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
     BONDS = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
-    TEMP_MOLS_LIMIT = 30
+    TEMP_MOLS_LIMIT = 500
 
     def __init__(self, root_folder, transform = None, pre_transform = None):
 
