@@ -13,7 +13,6 @@ from rdkit.Chem.rdchem import BondType as BT
 # other
 from tqdm import tqdm
 
-
 class OtherReactionTriple(Data):
     # seeing if this works
 
@@ -22,12 +21,12 @@ class OtherReactionTriple(Data):
 
         # initial checks
         if r and ts and p:
-            assert len(r.z) == len(ts.z) == len(p.z), \
-                "The mols have different number of atoms."
             assert r.idx == ts.idx == p.idx, \
                 "The IDs of each mol don't match. Are you sure your data processing is correct?"
-            self.num_atoms = len(r.z)
+            assert len(r.z) == len(ts.z) == len(p.z), \
+                "The mols have different number of atoms."
             self.idx = r.idx
+            self.num_atoms = len(r.z)
 
             # reactant
             self.edge_attr_r = r.edge_attr
@@ -48,29 +47,25 @@ class OtherReactionTriple(Data):
             self.x_p = p.x
         else:
             NameError("Reactant, TS, or Product not defined for this reaction.")
-        
-        # all molecules as Data(edge_attr, edge_index, idx, pos, x, z)
-        self.r = r
-        self.ts = ts
-        self.p = p
 
-    
     def __inc__(self, key, value):
-        if key == 'r':
-            return self.r.x.size(0)
-        if key == 'ts':
-            return self.ts.x.size(0)
-        if key == 'p':
-            return self.p.x.size(0)
+        if key == 'edge_index_r' or key == 'edge_attr_r':
+            return self.x_r.size(0)
+        if key == 'edge_index_ts' or key == 'edge_attr_ts':
+            return self.x_ts.size(0)
+        if key == 'edge_index_p' or key == 'edge_attr_p':
+            return self.x_p.size(0)
         else:
             return super().__inc__(key, value)
     
     def __cat_dim__(self, key, item):
-        if key == 'r' or key == 'ts' or key == 'p':
-            return None
+        # NOTE: automatically figures out .x and .pos
+        if key == 'edge_attr_r' or key == 'edge_attr_ts' or key == 'edge_attr_p':
+            return 0
+        if key == 'edge_index_r' or key == 'edge_index_ts' or key == 'edge_index_p':
+            return 1
         else:
             return super().__cat_dim__(key, item)
-
 
 class ReactionTriple(Data):
     """ Contains graph representation (as PyTorch Geometric Data() class) for reactant, TS, and product in a reaction trajectory.
@@ -130,7 +125,7 @@ class ReactionDataset(InMemoryDataset):
 
     TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
     BONDS = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
-    TEMP_MOLS_LIMIT = 1000
+    TEMP_MOLS_LIMIT = 30
 
     def __init__(self, root_folder, transform = None, pre_transform = None):
 
@@ -184,8 +179,8 @@ class ReactionDataset(InMemoryDataset):
 
         rxns = []
         for rxn_id in range(len(reactants)):
-            rxn = ReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
-            # rxn = OtherReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
+            # rxn = ReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
+            rxn = OtherReactionTriple(reactants[rxn_id], tss[rxn_id], products[rxn_id])
             rxns.append(rxn)
         self.rxn_data = rxns # spare rxn_data if funny business with main rxns
 

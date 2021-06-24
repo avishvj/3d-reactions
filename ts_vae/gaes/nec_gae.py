@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
 
+from ..utils import reset
+
 # basically lifted from original egnn: https://github.com/vgsatorras/egnn/
 
 def unsorted_segment_sum(edge_attr, row, num_segments):
@@ -33,18 +35,20 @@ class NodeEdgeCoord_AE(nn.Module):
                                    h_nf = h_nf, out_nf = out_nf, act_fn = act_fn)
         self.add_module("NodeEdgeCoord", necl)
         # final emb for node and edge
-        self.node_out_to_emb_mlp = nn.Linear(out_nf, emb_nf)
+        self.node_out2emb_mlp = nn.Linear(out_nf, emb_nf)
         out_edge_nf = in_edge_nf
-        self.edge_out_to_emb_mlp = nn.Linear(out_edge_nf, emb_nf)
+        self.edge_out2emb_mlp = nn.Linear(out_edge_nf, emb_nf)
 
-        # TODO: define all layers here
-
-        # decoder
-        self.emb_to_node_mlp = nn.Linear(emb_nf, in_node_nf)
-        self.emb_to_edge_mlp = nn.Linear(emb_nf, in_edge_nf)
+        # decoder, TODO: define adj layer here?
+        self.node_emb2fs_mlp = nn.Linear(emb_nf, in_node_nf)
+        self.edge_emb2fs_mlp = nn.Linear(emb_nf, in_edge_nf)
         # self.adj_mlp = nn.Linear()
 
         self.to(device)
+
+    def reset_parameters(self):
+        # TODO
+        reset(self)
     
     def forward(self, node_feats, edge_index, edge_attr, coords):
         # encode then decode
@@ -54,8 +58,8 @@ class NodeEdgeCoord_AE(nn.Module):
 
     def encode(self, node_feats, edge_index, edge_attr, coords):
         node_out, edge_out, coord_out = self._modules["NodeEdgeCoord"](node_feats, edge_index, edge_attr, coords)
-        node_emb = self.node_out_to_emb_mlp(node_out)
-        edge_emb = self.edge_out_to_emb_mlp(edge_out)
+        node_emb = self.node_out2emb_mlp(node_out)
+        edge_emb = self.edge_out2emb_mlp(edge_out)
         return node_emb, edge_emb, coord_out
 
     ### TODO: these decode funcs are exactly the same as NodeEdge - maybe worth creating base class of both
@@ -68,44 +72,30 @@ class NodeEdgeCoord_AE(nn.Module):
         return recon_node_fs, recon_edge_fs, adj_pred
 
     def decode_to_node_fs(self, node_emb):
-        # simple linear layer from node embedding to node features
-        # emb_to_fs = nn.Linear(self.emb_nf, self.in_node_nf)
-        # recon_node_fs = emb_to_fs(node_emb)
-        # return recon_node_fs
-        return self.emb_to_node_mlp(node_emb)
+        # linear layer from node embedding to reconstructed node features
+        return self.node_emb2fs_mlp(node_emb)
 
     def decode_to_edge_fs(self, edge_emb):
-        # simple linear layer from edge embedding to edge features
-        # emb_to_fs = nn.Linear(self.emb_nf, self.in_edge_nf)
-        # recon_edge_fs = emb_to_fs(edge_emb)
-        # return recon_edge_fs
-        return self.emb_to_edge_mlp(edge_emb)
+        # linear layer from edge embedding to reconstructed edge features
+        return self.edge_emb2fs_mlp(edge_emb)
 
-    def decode_to_adj(self, x, W = 3, b = -1, linear_sig = True, remove_diag = True):
-        # num_nodes dim: [num_nodes, 2]
-        # use number of nodes in batch as adj matrix dimensions (obviously!)
-        # generate differences between node embeddings as adj matrix
-        # W, b: weights and biases for linear layer. push nodes thru linear layer at end
-        # TODO: rn, decode to adj matrix. also want to decode to original node_feats
-        # TODO: is this basically just: torch.sigmoid(torch.matmul(x, x.t()))?
-        # need to decode to adj and nodes
+    def decode_to_adj(self, x, remove_self_loops = True):
+        # x dim: [num_nodes, 2], use num_nodes as adj matrix dim
+        # returns probabilistic adj matrix
+        # TODO: some way of using linear layer
 
+        # create params from x
+        num_nodes = x.size(0)
         x_a = x.unsqueeze(0) # dim: [1, num_nodes, 2]
         x_b = torch.transpose(x_a, 0, 1) # dim: [num_nodes, 1, 2], t.t([_, dim to t, dim to t])
 
-        X = (x_a - x_b) ** 2  # dim: [num_nodes, num_nodes, 2]
-        
-        num_nodes = x.size(0) # num_nodes (usually as number of nodes in batch)
+        # generate diffs between node embs as adj matrix
+        X = (x_a - x_b) ** 2 # dim: [num_nodes, num_nodes, 2]
         X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
-
-        # (lin_sig or not) layer, dim=1 sums to dim=[num_nodes^2]
-        # gives probabilistic adj matrix
-        # TODO: use real linear layer here so can train
-        # NOTE: W and b fixed. W shouldn't be scalar. should have been torch.sum(W+X, sum=1)
-        X = torch.sigmoid(W * torch.sum(X, dim = 1) + b) if linear_sig else torch.sum(X, dim = 1)
-
+        X = torch.sigmoid(torch.sum(X, dim = 1)) # dim: [num_nodes^2]
         adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
-        if remove_diag: # TODO: the pyg method adds self-loops, what do I want?
+
+        if remove_self_loops:
             adj_pred = adj_pred * (1 - torch.eye(num_nodes).to(self.device))
         
         return adj_pred
@@ -146,7 +136,7 @@ class NodeEdgeCoord_Layer(nn.Module):
         self.coord_mlp = nn.Sequential(nn.Linear(in_coord_mlp_nf, h_coord_nf), nn.ReLU(), layer)
     
     def node_model(self, node_feats, edge_index, edge_attr, coords):
-        # NOTE: edge_attr here is actually edge_mlp(original edge_attr)
+        # NOTE: edge_attr here is actually edge_model(original edge_attr) = edge_out
         # NOTE: currently using coords as feature... maybe bad idea. doesn't in original.
         node_is, _ = edge_index
         agg = unsorted_segment_sum(edge_attr, node_is, node_feats.size(0))
@@ -165,9 +155,19 @@ class NodeEdgeCoord_Layer(nn.Module):
         # == normed bond lengths * edge_out
         # NOTE: edge_attr here is actually edge_mlp(original edge_attr)
         atom_is, _ = edge_index
-        trans = coord_diffs * self.coord_mlp(edge_attr)
+        #print(f"c_model coord diffs: {coord_diffs}") # coord_diffs: mainly e-1, some e-2
+        e_c = self.coord_mlp(edge_attr) # e_c: ~e-4/e-5
+        #print(f"c_model e_c: {e_c}")
+        trans = coord_diffs * e_c   # trans: ~e-5/e-6
+        #print(f"c_model trans: {trans}")
+        # trans: not changing right now
+        #print(f"c_model trans: {trans}")
         agg = unsorted_segment_sum(trans, atom_is, coords.size(0))
+        # print(f"c_model agg: {agg}")
+        # agg: ~e-5/e-6
+        #print(f"coords: {coords}")
         coords += agg
+        #print(f"coords: {coords}")
         return coords
 
     def coord_to_radial(self, edge_index, coords):
@@ -177,6 +177,7 @@ class NodeEdgeCoord_Layer(nn.Module):
         # normalise coords, TODO: alternative coord_norm as func or class
         radial = torch.sum((coord_diffs)**2, 1).unsqueeze(1)
         norm = torch.sqrt(radial) + 1
+        # print(f"norm: {norm}")
         normed_coord_diffs = coord_diffs / norm
         return radial, normed_coord_diffs
     
@@ -217,20 +218,21 @@ def train_nec_ae(nec_ae, opt, loader):
                    Node fs shape: {node_feats.shape} "
 
         # losses and opt step
-        node_recon_loss = F.mse_loss(recon_node_fs, node_feats) # NOTE: gets worse...
-        edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr) # NOTE: seems fine
-        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # NOTE: almost no change
+        #node_recon_loss = F.mse_loss(recon_node_fs, node_feats) # NOTE: gets worse...
+        #edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr) # NOTE: seems fine
+        # adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # NOTE: almost no change
         coord_loss = F.mse_loss(coord_out, coords) # NOTE: stays at zero
-        total_loss = node_recon_loss + edge_recon_loss + adj_loss + coord_loss
+        # total_loss = node_recon_loss + edge_recon_loss + adj_loss + coord_loss
+        total_loss = coord_loss
         total_loss.backward()
         opt.step()
 
         # record batch results
         res['total_loss'] += total_loss.item() * batch_size
         res['counter'] += batch_size
-        res['node_recon_loss_arr'].append(node_recon_loss.item())
-        res['edge_recon_loss_arr'].append(edge_recon_loss.item())
-        res['adj_loss_arr'].append(adj_loss.item())
+        # res['node_recon_loss_arr'].append(node_recon_loss.item())
+        # res['edge_recon_loss_arr'].append(edge_recon_loss.item())
+        # res['adj_loss_arr'].append(adj_loss.item())
         res['coord_loss_arr'].append(coord_loss.item())
         res['total_loss_arr'].append(total_loss.item())
     
@@ -260,6 +262,7 @@ def test_nec_ae(nec_ae, loader):
                    Node fs shape: {node_feats.shape} "
 
         # losses and opt step
+        # TODO: check scales, sort each out
         node_recon_loss = F.mse_loss(recon_node_fs, node_feats)
         edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr)
         adj_loss = F.binary_cross_entropy(adj_pred, adj_gt)
