@@ -50,12 +50,13 @@ class NodeEdgeCoord_AE(nn.Module):
         self.to(device)
 
     def reset_parameters(self):
-        # TODO
-        reset(self._modules)
+        reset(self._modules["NodeEdgeCoord"])
         reset(self.node_out2emb_mlp)
         reset(self.edge_out2emb_mlp)
         reset(self.node_emb2fs_mlp)
         reset(self.edge_emb2fs_mlp)
+        reset(self.W)
+        reset(self.b)
     
     def forward(self, node_feats, edge_index, edge_attr, coords):
         # encode then decode
@@ -96,7 +97,8 @@ class NodeEdgeCoord_AE(nn.Module):
         # generate diffs between node embs as adj matrix
         X = (x_a - x_b) ** 2 # dim: [num_nodes, num_nodes, 2]
         X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
-        X = torch.tanh(self.W * torch.sum(X, dim = 1) + self.b)
+        X = torch.sigmoid(self.W * torch.sum(X, dim = 1) + self.b) # sigmoid here since can get negative values with W, b
+        # X = torch.tanh(torch.sum(X, dim = 1)) # no linear since can get negative values, gives better output but need diff way of training
         adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
 
         if remove_self_loops:
@@ -134,10 +136,14 @@ class NodeEdgeCoord_Layer(nn.Module):
                                       act_fn,
                                       nn.Linear(h_nf, out_edge_nf, bias = bias))
         
-        # coord mlp: no bias, final layer has xavier_uniform init [following orig]
+        # coord edge mlp: no bias, final layer has xavier_uniform init [following orig]
         layer = nn.Linear(h_coord_nf, radial_dim, bias = False)
         torch.nn.init.xavier_uniform_(layer.weight, gain=0.001)
-        self.coord_mlp = nn.Sequential(nn.Linear(in_coord_mlp_nf, h_coord_nf), nn.ReLU(), layer)
+        self.coord_edge_mlp = nn.Sequential(nn.Linear(in_coord_mlp_nf, h_coord_nf), nn.ReLU(), layer)
+
+        # coord mlp
+        self.coord_mlp = nn.Linear(3, 3)
+
     
     def node_model(self, node_feats, edge_index, edge_attr, coords):
         # NOTE: edge_attr here is actually edge_model(original edge_attr) = edge_out
@@ -155,24 +161,19 @@ class NodeEdgeCoord_Layer(nn.Module):
         return self.edge_mlp(edge_in)
     
     def coord_model(self, edge_index, edge_attr, coords, coord_diffs):
-        # radially normed coord differences (i.e. bond lengths) * coord_mlp(edges)
-        # == normed bond lengths * edge_out
+        # radially normed coord differences * coord_mlp(edges) == normed bond lengths * edge_out
         # NOTE: edge_attr here is actually edge_mlp(original edge_attr)
+        # NOTE: added mlp for coordinates to push closer towards final value
+        # TODO: eval impact of coord_edge_mlp(), suspicion it does nothing as edge not too relevant
+        # TODO: is equivariance preserved with coord_mlp()?
         atom_is, _ = edge_index
-        #print(f"c_model coord diffs: {coord_diffs}") # coord_diffs: mainly e-1, some e-2
-        e_c = self.coord_mlp(edge_attr) # e_c: ~e-4/e-5
-        #print(f"c_model e_c: {e_c}")
+        e_c = self.coord_edge_mlp(edge_attr) # e_c: ~e-4/e-5
         trans = coord_diffs * e_c   # trans: ~e-5/e-6
-        #print(f"c_model trans: {trans}")
-        # trans: not changing right now
-        #print(f"c_model trans: {trans}")
         agg = unsorted_segment_sum(trans, atom_is, coords.size(0))
-        # print(f"c_model agg: {agg}")
-        # agg: ~e-5/e-6
-        #print(f"coords: {coords}")
         coords += agg
-        #print(f"coords: {coords}")
-        return coords
+        # return coords
+        coord_out = self.coord_mlp(coords)
+        return coord_out
 
     def coord_to_radial(self, edge_index, coords):
         # calc coordinate differences between bonded atoms (i.e. bond lengths)
@@ -181,13 +182,11 @@ class NodeEdgeCoord_Layer(nn.Module):
         # normalise coords, TODO: alternative coord_norm as func or class
         radial = torch.sum((coord_diffs)**2, 1).unsqueeze(1)
         norm = torch.sqrt(radial) + 1
-        # print(f"norm: {norm}")
         normed_coord_diffs = coord_diffs / norm
         return radial, normed_coord_diffs
     
     def forward(self, node_feats, edge_index, edge_attr, coords):
-        # maybe shouldn't be using coords in node_out
-        # ideally would want to use node and edge features for final coords?
+        # TODO: coords at end so can use node feats
         radial, coord_diffs = self.coord_to_radial(edge_index, coords)
         edge_out = self.edge_model(node_feats, edge_index, edge_attr, radial)
         coord_out = self.coord_model(edge_index, edge_out, coords, coord_diffs)
