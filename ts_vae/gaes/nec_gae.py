@@ -48,7 +48,11 @@ class NodeEdgeCoord_AE(nn.Module):
 
     def reset_parameters(self):
         # TODO
-        reset(self)
+        reset(self._modules)
+        reset(self.node_out2emb_mlp)
+        reset(self.edge_out2emb_mlp)
+        reset(self.node_emb2fs_mlp)
+        reset(self.edge_emb2fs_mlp)
     
     def forward(self, node_feats, edge_index, edge_attr, coords):
         # encode then decode
@@ -79,6 +83,26 @@ class NodeEdgeCoord_AE(nn.Module):
         # linear layer from edge embedding to reconstructed edge features
         return self.edge_emb2fs_mlp(edge_emb)
 
+    def decode_to_adj_nn(self, x, W, b, remove_self_loops = True):
+
+        # create params from x
+        num_nodes = x.size(0)
+        x_a = x.unsqueeze(0) # dim: [1, num_nodes, 2]
+        x_b = torch.transpose(x_a, 0, 1) # dim: [num_nodes, 1, 2], t.t([_, dim to t, dim to t])
+
+        # generate diffs between node embs as adj matrix
+        X = (x_a - x_b) ** 2 # dim: [num_nodes, num_nodes, 2]
+        X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
+        X = torch.sigmoid(W * torch.sum(X, dim = 1) + b)
+
+        adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
+
+        if remove_self_loops:
+            adj_pred = adj_pred * (1 - torch.eye(num_nodes).to(self.device))
+        
+        return adj_pred
+
+
     def decode_to_adj(self, x, remove_self_loops = True):
         # x dim: [num_nodes, 2], use num_nodes as adj matrix dim
         # returns probabilistic adj matrix
@@ -92,7 +116,15 @@ class NodeEdgeCoord_AE(nn.Module):
         # generate diffs between node embs as adj matrix
         X = (x_a - x_b) ** 2 # dim: [num_nodes, num_nodes, 2]
         X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
-        X = torch.sigmoid(torch.sum(X, dim = 1)) # dim: [num_nodes^2]
+        # X = torch.sigmoid(torch.sum(X, dim = 1)) # dim: [num_nodes^2]
+        # X = torch.sum(X, dim = 1)
+        # X = torch.relu(torch.sum(X, dim = 1)) # dim: [num_nodes^2]
+        X = torch.tanh(torch.sum(X, dim = 1)) 
+        #print(X.shape)
+        #print(X)
+        #X = torch.norm(X)
+        #print(X)
+
         adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
 
         if remove_self_loops:
