@@ -16,6 +16,7 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
 
 
 class NodeEdgeCoord_AE(nn.Module):
+    # TODO: decode funcs are exactly the same as NodeEdge - maybe worth creating base class of both
 
     def __init__(self, in_node_nf = 11, in_edge_nf = 4, h_nf = 4, out_nf = 4, emb_nf = 2, act_fn = nn.ReLU(), device = 'cpu'):
         super(NodeEdgeCoord_AE, self).__init__()
@@ -39,10 +40,12 @@ class NodeEdgeCoord_AE(nn.Module):
         out_edge_nf = in_edge_nf
         self.edge_out2emb_mlp = nn.Linear(out_edge_nf, emb_nf)
 
-        # decoder, TODO: define adj layer here?
+        # decoder node and edge
         self.node_emb2fs_mlp = nn.Linear(emb_nf, in_node_nf)
         self.edge_emb2fs_mlp = nn.Linear(emb_nf, in_edge_nf)
-        # self.adj_mlp = nn.Linear()
+        # decoder adj [found these worked well]
+        self.W = nn.Parameter(0.5 * torch.ones(1)).to(device)
+        self.b = nn.Parameter(0.8 * torch.ones(1)).to(device)
 
         self.to(device)
 
@@ -65,8 +68,6 @@ class NodeEdgeCoord_AE(nn.Module):
         node_emb = self.node_out2emb_mlp(node_out)
         edge_emb = self.edge_out2emb_mlp(edge_out)
         return node_emb, edge_emb, coord_out
-
-    ### TODO: these decode funcs are exactly the same as NodeEdge - maybe worth creating base class of both
     
     def decode(self, node_emb, edge_emb):
         # decode to edge_feats, node_feats, adj
@@ -83,30 +84,9 @@ class NodeEdgeCoord_AE(nn.Module):
         # linear layer from edge embedding to reconstructed edge features
         return self.edge_emb2fs_mlp(edge_emb)
 
-    def decode_to_adj_nn(self, x, W, b, remove_self_loops = True):
-
-        # create params from x
-        num_nodes = x.size(0)
-        x_a = x.unsqueeze(0) # dim: [1, num_nodes, 2]
-        x_b = torch.transpose(x_a, 0, 1) # dim: [num_nodes, 1, 2], t.t([_, dim to t, dim to t])
-
-        # generate diffs between node embs as adj matrix
-        X = (x_a - x_b) ** 2 # dim: [num_nodes, num_nodes, 2]
-        X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
-        X = torch.sigmoid(W * torch.sum(X, dim = 1) + b)
-
-        adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
-
-        if remove_self_loops:
-            adj_pred = adj_pred * (1 - torch.eye(num_nodes).to(self.device))
-        
-        return adj_pred
-
-
     def decode_to_adj(self, x, remove_self_loops = True):
         # x dim: [num_nodes, 2], use num_nodes as adj matrix dim
         # returns probabilistic adj matrix
-        # TODO: some way of using linear layer
 
         # create params from x
         num_nodes = x.size(0)
@@ -116,15 +96,7 @@ class NodeEdgeCoord_AE(nn.Module):
         # generate diffs between node embs as adj matrix
         X = (x_a - x_b) ** 2 # dim: [num_nodes, num_nodes, 2]
         X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, 2] to apply sum 
-        # X = torch.sigmoid(torch.sum(X, dim = 1)) # dim: [num_nodes^2]
-        # X = torch.sum(X, dim = 1)
-        # X = torch.relu(torch.sum(X, dim = 1)) # dim: [num_nodes^2]
-        X = torch.tanh(torch.sum(X, dim = 1)) 
-        #print(X.shape)
-        #print(X)
-        #X = torch.norm(X)
-        #print(X)
-
+        X = torch.tanh(self.W * torch.sum(X, dim = 1) + self.b)
         adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes]
 
         if remove_self_loops:
