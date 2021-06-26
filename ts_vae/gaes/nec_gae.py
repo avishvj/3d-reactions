@@ -5,7 +5,7 @@ from torch_geometric.utils import to_dense_adj
 
 from ..utils import reset
 
-# basically lifted from original egnn: https://github.com/vgsatorras/egnn/
+# mostly lifted from original egnn: https://github.com/vgsatorras/egnn/
 
 def unsorted_segment_sum(edge_attr, row, num_segments):
     result_shape = (num_segments, edge_attr.size(1))
@@ -196,117 +196,123 @@ class NodeEdgeCoord_Layer(nn.Module):
 
 ### train and test functions
 
-def train_nec_ae(nec_ae, opt, loader):
+# TODO: noticed an error earlier with adj_loss calc, double check with multiple runs
 
-    res = {'total_loss': 0, 'counter': 0, 'total_loss_arr': [], 'coord_loss_arr': [],
-           'node_recon_loss_arr': [], 'edge_recon_loss_arr': [], 'adj_loss_arr': []}
-    
-    # not sure how coords update would work for full dataset?
-    # coord_updates = {'batch_counter': 0, 'batch_coords': []}
+def train_nec(nec_ae, opt, loader):
+
+    res = {'total_loss': 0, 'batch_counter': 0, 'coord_loss_arr': [], 'adj_loss_arr': [],
+           'node_loss_arr': []}
+
+    # coord/adj/node_save = {'gt': [], 'pred': []}
 
     for i, rxn_batch in enumerate(loader):
 
         nec_ae.train()
         opt.zero_grad()
 
-        # gen node emb, edge emb, adj, coords
-        node_feats, edge_index, edge_attr, coords = rxn_batch.x, rxn_batch.edge_index, rxn_batch.edge_attr, rxn_batch.pos
-        batch_size, batch_vec = len(rxn_batch.idx), rxn_batch.batch
-        node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out = nec_ae(node_feats, edge_index, edge_attr, coords)
+        # init required variables for model
+        r_node_feats, r_edge_index, r_edge_attr, r_coords = rxn_batch.x_r, rxn_batch.edge_index_r, rxn_batch.edge_attr_r, rxn_batch.pos_r
+        batch_size = len(rxn_batch.idx)
+        max_num_atoms = sum(rxn_batch.num_atoms).item() # add this in because sometimes we get hanging atoms if bonds broken
+
+        # run model on reactant
+        node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out = nec_ae(r_node_feats, r_edge_index, r_edge_attr, r_coords)
 
         # ground truth values
-        adj_gt = to_dense_adj(edge_index).squeeze(dim = 0)
-        assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape! \
-                GT shape: {adj_gt.shape}, Pred shape: {adj_pred.shape}, Batch size: {batch_size}, \
-                   Node fs shape: {node_feats.shape} "
+        ts_node_feats, ts_edge_index, ts_edge_attr, ts_coords = rxn_batch.x_ts, rxn_batch.edge_index_ts, rxn_batch.edge_attr_ts, rxn_batch.pos_ts
+        adj_gt = to_dense_adj(ts_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
+        assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape! \n \
+               GT shape: {adj_gt.shape}, Pred shape: {adj_pred.shape}, Batch size: {batch_size} \n \
+               TS edge idx: {ts_edge_index}, TS node_fs shape: {ts_node_feats.shape}, Batch n_atoms: {rxn_batch.num_atoms}"
 
         # losses and opt step
-        #node_recon_loss = F.mse_loss(recon_node_fs, node_feats) # NOTE: gets worse...
-        #edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr) # NOTE: seems fine
-        # adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # NOTE: almost no change
-        coord_loss = F.mse_loss(coord_out, coords) # NOTE: stays at zero
-        # total_loss = node_recon_loss + edge_recon_loss + adj_loss + coord_loss
-        total_loss = coord_loss
+        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # scale: e-1, 10 epochs: 0.5 -> 0.4
+        coord_loss = torch.sqrt(F.mse_loss(coord_out, ts_coords)) # scale: e-1, 10 epochs: 1.1 -> 0.4
+        node_loss = F.mse_loss(recon_node_fs, ts_node_feats) # scale: e-1 --> e-2, 10 epochs: 0.7 -> 0.05
+        total_loss = adj_loss + coord_loss + node_loss
+
         total_loss.backward()
         opt.step()
 
         # record batch results
-        res['total_loss'] += total_loss.item() * batch_size
-        res['counter'] += batch_size
-        # res['node_recon_loss_arr'].append(node_recon_loss.item())
-        # res['edge_recon_loss_arr'].append(edge_recon_loss.item())
-        # res['adj_loss_arr'].append(adj_loss.item())
+        res['total_loss'] += total_loss.item()
+        res['batch_counter'] += 1
+        
         res['coord_loss_arr'].append(coord_loss.item())
-        res['total_loss_arr'].append(total_loss.item())
+        res['adj_loss_arr'].append(adj_loss.item())
+        res['node_loss_arr'].append(node_loss.item())
     
-    return res['total_loss'] / res['counter'], res
+    return res['total_loss'] / res['batch_counter'], res
 
-def test_nec_ae(nec_ae, loader):
 
-    res = {'total_loss': 0, 'counter': 0, 'total_loss_arr': [], 'coord_loss_arr': [],
-           'node_recon_loss_arr': [], 'edge_recon_loss_arr': [], 'adj_loss_arr': []}
+def test_nec(nec_ae, loader):
     
-    # not sure how coords update would work for full dataset?
-    # coord_updates = {'batch_counter': 0, 'batch_coords': []}
-
+    res = {'total_loss': 0, 'total_loss_arr': [], 'batch_counter': 0, 
+           'coord_loss_arr': [], 'adj_loss_arr': [], 'node_loss_arr': []}
+        
     for i, rxn_batch in enumerate(loader):
 
-        nec_ae.eval()
+       nec_ae.eval()
 
-        # gen node emb, edge emb, adj, coords
-        node_feats, edge_index, edge_attr, coords = rxn_batch.x, rxn_batch.edge_index, rxn_batch.edge_attr, rxn_batch.pos
-        batch_size, batch_vec = len(rxn_batch.idx), rxn_batch.batch
-        node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out = nec_ae(node_feats, edge_index, edge_attr, coords)
+       # init required variables for model
+       r_node_feats, r_edge_index, r_edge_attr, r_coords = rxn_batch.x_r, rxn_batch.edge_index_r, rxn_batch.edge_attr_r, rxn_batch.pos_r
+       batch_size = len(rxn_batch.idx)
+       max_num_atoms = sum(rxn_batch.num_atoms).item() # add this in because sometimes we get hanging atoms if bonds broken
 
-        # ground truth values
-        adj_gt = to_dense_adj(edge_index).squeeze(dim = 0)
-        assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape! \
-                GT shape: {adj_gt.shape}, Pred shape: {adj_pred.shape}, Batch size: {batch_size}, \
-                   Node fs shape: {node_feats.shape} "
+       # run model on reactant
+       node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out = nec_ae(r_node_feats, r_edge_index, r_edge_attr, r_coords)
 
-        # losses and opt step
-        # TODO: check scales, sort each out
-        node_recon_loss = F.mse_loss(recon_node_fs, node_feats)
-        edge_recon_loss = F.mse_loss(recon_edge_fs, edge_attr)
-        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt)
-        coord_loss = F.mse_loss(coord_out, coords)
-        # total_loss = node_recon_loss + edge_recon_loss + adj_loss + coord_loss
-        total_loss = adj_loss + coord_loss
+       # ground truth values
+       ts_node_feats, ts_edge_index, ts_edge_attr, ts_coords = rxn_batch.x_ts, rxn_batch.edge_index_ts, rxn_batch.edge_attr_ts, rxn_batch.pos_ts
+       adj_gt = to_dense_adj(ts_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
+       assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape! \n \
+              GT shape: {adj_gt.shape}, Pred shape: {adj_pred.shape}, Batch size: {batch_size} \n \
+              TS edge idx: {ts_edge_index}, TS node_fs shape: {ts_node_feats.shape}, Batch n_atoms: {rxn_batch.num_atoms}"
 
-        # record batch results
-        res['total_loss'] += total_loss.item() * batch_size
-        res['counter'] += batch_size
-        res['node_recon_loss_arr'].append(node_recon_loss.item())
-        res['edge_recon_loss_arr'].append(edge_recon_loss.item())
-        res['adj_loss_arr'].append(adj_loss.item())
-        res['coord_loss_arr'].append(coord_loss.item())
-        res['total_loss_arr'].append(total_loss.item())
+       # losses
+       adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # scale: e-1, 10 epochs: 0.5 -> 0.4
+       coord_loss = torch.sqrt(F.mse_loss(coord_out, ts_coords)) # scale: e-1, 10 epochs: 1.1 -> 0.4
+       node_loss = F.mse_loss(recon_node_fs, ts_node_feats) # scale: e-1 --> e-2, 10 epochs: 0.7 -> 0.05
+       total_loss = adj_loss + coord_loss + node_loss
+
+       # record batch results
+       res['total_loss'] += total_loss.item()
+       res['total_loss_arr'].append(total_loss.item())
+       res['batch_counter'] += 1
+
+       res['coord_loss_arr'].append(coord_loss.item())
+       res['adj_loss_arr'].append(adj_loss.item())
+       res['node_loss_arr'].append(node_loss.item())
     
-    return res['total_loss'] / res['counter'], res
+    return res['total_loss'] / res['batch_counter'], res
 
-def main(nec_ae, nec_opt, train_loaders, test_loaders, epochs = 20, test_interval = 5):
-    final_res = {'epochs': [], 'train_loss_arr': [], 'train_res_arr': [], 
-                'test_loss_arr': [], 'test_res_arr': [], 'best_test': 1e10, 'best_epoch': 0}
 
-    # nec_gae.reset_parameters()
+def main_nec(nec_ae, nec_opt, train_loader, test_loader, epochs = 20, test_interval = 5, reset = True):
 
+    torch.set_printoptions(precision = 3, sci_mode = False)
+
+    final_res = {'train_loss_arr': [], 'train_res_arr': [], 
+                 'test_loss_arr': [], 'test_res_arr': [], 'best_test': 1e10, 'best_epoch': 0}
+    
+    if reset:
+        nec_ae.reset_parameters()
+    
     for epoch in range(1, epochs + 1):
         
-        train_loss, train_res = train_nec_ae(nec_ae, nec_opt, train_loaders['r'])
+        train_loss, train_res = train_nec(nec_ae, nec_opt, train_loader)
         final_res['train_loss_arr'].append(train_loss)
         final_res['train_res_arr'].append(train_res)
         print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
-        
-        if epoch % test_interval == 0:
-        
-            test_loss, test_res = test_nec_ae(nec_ae, test_loaders['r'])
+
+        if epoch % test_interval ==  0:
+            
+            test_loss, test_res = test_nec(nec_ae, test_loader)
             final_res['test_loss_arr'].append(test_loss)
             final_res['test_res_arr'].append(test_res)
             print(f'===== Testing epoch: {epoch:03d}, Loss: {test_loss:.4f} ===== \n')
-            
+
             if test_loss < final_res['best_test']:
                 final_res['best_test'] = test_loss
                 final_res['best_epoch'] = epoch
-    
+            
     return final_res
-
