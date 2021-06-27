@@ -238,8 +238,8 @@ def train_nec(nec_ae, opt, loader):
         res['total_loss'] += total_loss.item()
         res['batch_counter'] += 1
         
-        res['coord_loss_arr'].append(coord_loss.item())
         res['adj_loss_arr'].append(adj_loss.item())
+        res['coord_loss_arr'].append(coord_loss.item())
         res['node_loss_arr'].append(node_loss.item())
     
     return res['total_loss'] / res['batch_counter'], res
@@ -280,8 +280,8 @@ def test_nec(nec_ae, loader):
        res['total_loss_arr'].append(total_loss.item())
        res['batch_counter'] += 1
 
-       res['coord_loss_arr'].append(coord_loss.item())
        res['adj_loss_arr'].append(adj_loss.item())
+       res['coord_loss_arr'].append(coord_loss.item())
        res['node_loss_arr'].append(node_loss.item())
     
     return res['total_loss'] / res['batch_counter'], res
