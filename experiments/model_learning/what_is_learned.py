@@ -169,7 +169,14 @@ if __name__ == "__main__":
     print("Model prepared.")
 
     # ts interpolation experiment: train model, get embeddings from train and test
+    recorded_batches = []
+    epochs = 5
+    test_interval = 10
+    experiment_params = (num_rxns, train_ratio, batch_size, recorded_batches, epochs, test_interval)
+    model_params = (nec_ae, nec_opt)
+    loaders = (train_loader, test_loader)
+    
     print("Starting TS interpolation experiment...")
-    experiment_log = ts_interpolation()
+    experiment_log = ts_interpolation(experiment_params, model_params, loaders)
     print("Completed experiment, printing results as TSNE plot...")
     print_embeddings(experiment_log)

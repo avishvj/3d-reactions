@@ -120,8 +120,9 @@ class ExperimentLog:
         self.tt_split = tt_split
         self.batch_size = batch_size
         # batches to record
-        assert max(recorded_batches) < (num_rxns / batch_size), "Maximum batch_id not possible to record"
-        assert all(batch_id > -1 for batch_id in recorded_batches), "You are planning to record negative batch ids."
+        if recorded_batches and recorded_batches != []:
+            assert max(recorded_batches) < (num_rxns / batch_size), "Maximum batch_id not possible to record"
+            assert all(batch_id > -1 for batch_id in recorded_batches), "You are planning to record negative batch ids."
         self.recorded_batches = recorded_batches
 
     
