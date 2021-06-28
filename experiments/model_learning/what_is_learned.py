@@ -70,10 +70,10 @@ def print_embeddings(experiment_log):
     # pca on embeddings
     # # embedding: (node_emb, edge_emb, batch)
 
-    for emb in experiment_log.embeddings:
-        pass
+    # for emb in experiment_log.embeddings:
+    #     pass
 
-    node_embs = [node_emb for (node_emb, edge_emb, rxn_batch) in experiment_log.embeddings]
+    node_embs = [node_emb for (node_emb, edge_emb, rxn_batch) in experiment_log.embeddings[0]]
     node_embs = torch.cat(node_embs, dim = 0)
     
     xs, ys = zip(*TSNE().fit_transform(node_embs.detach().numpy()))
@@ -178,5 +178,5 @@ if __name__ == "__main__":
     
     print("Starting TS interpolation experiment...")
     experiment_log = ts_interpolation(experiment_params, model_params, loaders)
-    print("Completed experiment, printing results as TSNE plot...")
+    print("\nCompleted experiment, printing results as TSNE plot...")
     print_embeddings(experiment_log)
