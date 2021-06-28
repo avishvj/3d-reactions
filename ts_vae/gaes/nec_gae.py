@@ -199,6 +199,7 @@ class NodeEdgeCoord_Layer(nn.Module):
 # TODO: noticed an error earlier with adj_loss calc, double check with multiple runs
 
 def train_nec(nec_ae, opt, loader):
+    # one epoch
 
     res = {'total_loss': 0, 'batch_counter': 0, 'coord_loss_arr': [], 'adj_loss_arr': [],
            'node_loss_arr': []}
@@ -246,6 +247,7 @@ def train_nec(nec_ae, opt, loader):
 
 
 def test_nec(nec_ae, loader):
+    # one epoch
     
     res = {'total_loss': 0, 'total_loss_arr': [], 'batch_counter': 0, 
            'coord_loss_arr': [], 'adj_loss_arr': [], 'node_loss_arr': []}

@@ -1,13 +1,13 @@
-### EXPERIMENT_LOGGER.PY
-
 from dataclasses import dataclass
 from typing import List
-import torch.Tensor as Tensor
+import torch.tensor as Tensor
 
 # experiment metadata: number of molecules, epochs, optimiser 
 
 # best_epoch_train_res: epoch number, loss, embeddings
 # best_epoch_test_res: epoch number, loss, embeddings
+
+# might need to create experiment classes for each of these
 
 # Building on the MIT model
 #   - 'Is the model learning?' experiment
@@ -38,11 +38,11 @@ import torch.Tensor as Tensor
 #       - Best function to use
 
 # TODO
-#   - Recreate MIT model in PyTorch or use their TF version
 #   - My unique loss functions here?
 
 @dataclass
 class BatchLog:
+    # create this every time you end a batch 
 
     # batch metadata
     batch_size: int
@@ -61,6 +61,7 @@ class BatchLog:
     if record_dynamics:
         # angles? could do that after getting coords
         # or maybe record actual D_init [your D_final is last iteration of batch]
+        # record embeddings
         coords: Tensor
         adjs: Tensor
         record_id: int = batch_counter 
@@ -68,15 +69,13 @@ class BatchLog:
 
 class EpochLog:
 
-    def __init__(self, total_rxns, batch_size, tt_split):
+    def __init__(self):
 
         # batch log
         self.batch_logs: List[BatchLog] = []
 
         # epoch metadata
-        self.total_rxns = total_rxns
-        self.batch_size = batch_size
-        self.tt_split = tt_split
+        # self.batch_size = batch_size
     
     def add_batch(self, log: BatchLog):
         self.batch_logs.append(log)
