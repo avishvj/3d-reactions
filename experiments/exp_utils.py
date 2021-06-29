@@ -78,7 +78,7 @@ class ExperimentLog:
     # experiment metadata: num_rxns, tt_split, batch_size
     # associated gnn_embedding and how it changes
 
-    def __init__(self, num_rxns, tt_split, batch_size, recorded_batches):
+    def __init__(self, num_rxns, tt_split, batch_size, epochs, recorded_batches):
         
         self.epoch_logs: List[EpochLog] = []
         
@@ -98,6 +98,7 @@ class ExperimentLog:
     
     def get_num_epochs(self):
         self.num_epochs = len(self.epoch_logs)
+        return self.num_epochs
     
     def get_experiment_losses(self):
         # for each epoch, record the losses

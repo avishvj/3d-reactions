@@ -12,6 +12,9 @@ runs/*
 data/*
 spare_code.ipynb
 
+# experiments
+*/figs/*
+
 # aml
 *.ipynb_aml_checkpoints/*
 .ipynb_aml_checkpoints/

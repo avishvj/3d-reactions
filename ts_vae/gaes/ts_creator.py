@@ -58,7 +58,7 @@ class TSPostMap(TSCreatorBase):
         r_mapped = self.r_mapper(*(self.r_params), self.batch_node_vecs[0])
         p_mapped = self.p_mapper(*(self.p_params), self.batch_node_vecs[1])
         ts_mapped = self.combine_r_and_p(r_mapped, p_mapped)
-        return ts_mapped
+        return ts_mapped, r_mapped[-1], p_mapped[-1]
 
     def combine_r_and_p(self, r_mapped, p_mapped):
         """ Combine mapped representations of reactant and product. 
