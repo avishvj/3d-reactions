@@ -8,22 +8,26 @@
 #   - subclasses for different stages?
 
 
+import torch.nn as nn
+
 def linear_combination(r, p):
     return (r + p) / 2
 
 func_dict = {'linear_combination': linear_combination}
 
-
-class TS_Operator_Base:
+class TS_Operator_Base(nn.Module):
     # pre_map, post_map, during_map subclasses
 
     def __init__(self, avg_func, r_params, p_params):
+        super(TS_Operator_Base, self).__init__()
         assert avg_func in func_dict.keys(), "Averaging function not valid."
         self.avg_func = avg_func
-
         # features for r and p from batch: node_feats, edge_index, edge_attr, coords
         self.r_params = r_params
         self.p_params = p_params
+    
+    def forward(self):
+        return self.create_ts()
 
     def create_ts(self):
         raise NotImplementedError("Use concrete subclass for different averaging stages.")
@@ -42,9 +46,9 @@ class TS_PostMap(TS_Operator_Base):
     def create_ts(self):
         # params: node_feats, edge_index, edge_attr, coords
         # mapped: node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out
-        r_mapped = self.r_mapper(self.r_params)
-        p_mapped = self.p_mapper(self.p_params)
-        ts_mapped = self.average(r_mapped, p_mapped)
+        r_mapped = self.r_mapper(*(self.r_params))
+        p_mapped = self.p_mapper(*(self.p_params))
+        ts_mapped = self.average_r_and_p(r_mapped, p_mapped)
         return ts_mapped
 
     def average_r_and_p(self, r_mapped, p_mapped):
@@ -67,7 +71,7 @@ class TS_PreMap(TS_Operator_Base):
         # params: node_feats, edge_index, edge_attr, coords
         # mapped: node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out
         ts_params = self.average_r_and_p()
-        ts_mapped = self.ts_mapper(ts_params)
+        ts_mapped = self.ts_mapper(*ts_params)
         return ts_mapped
 
     def average_r_and_p(self):
