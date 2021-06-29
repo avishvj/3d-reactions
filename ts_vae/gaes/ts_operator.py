@@ -11,7 +11,14 @@
 import torch.nn as nn
 
 def linear_combination(r, p):
-    return (r + p) / 2
+    if r.shape != p.shape:
+        # this happens on edge features since bonds broken and formed
+        # current hacky soln: just average min features
+        # TODO: proper solution later
+        min_num_fs = min(r.size(0), p.size(0))
+        return (r[0:min_num_fs] + p[0:min_num_fs]) / 2
+    else:
+        return (r + p) / 2
 
 func_dict = {'linear_combination': linear_combination}
 
