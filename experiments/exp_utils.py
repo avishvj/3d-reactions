@@ -2,41 +2,6 @@ from dataclasses import dataclass
 from typing import List
 import torch.tensor as Tensor
 
-# experiment metadata: number of molecules, epochs, optimiser 
-
-# best_epoch_train_res: epoch number, loss, embeddings
-# best_epoch_test_res: epoch number, loss, embeddings
-
-# might need to create experiment classes for each of these
-
-# Building on the MIT model
-#   - 'Is the model learning?' experiment
-#       - Standard loss curve comparison: evaluate each individual component
-#           - Map embeddings to what is learnt a la GraphVAE?
-#       - Scatter plot between train:test in embedding space and molecular space
-#       - Coord evolution dynamics [as distribution?] [to deal with diff numbers of atoms, could pick sample]
-#       - Adj evolution dyanmics [as distribution?] [sample?]
-#   - 'What is the model learning?' experiment
-#       - Fig 3: look at weights corresponding to bonds
-#           - MY equivalent could be with attention module?
-#       - 'TS interpolation' experiment:
-#           - PCA on R and P embeddings; compare their linear comb embedding to TS embedding         
-#   - 'Uncertainty quantification' experiment
-#       - Fig 2: reaction core distances, compare 4 MIT to mine
-#           - Note: currently, I have D_init from my model as coord_out
-#           - If not D_init distribution not multimodal, motivate work through rep learning i.e. ideal feature mappings and TS operator
-#       - Bayesian version of model to get uncertainty estimates, aiming for robustness of HPs
-#           - Simple, foolproof methods: DeepEnsemble, dropout
-#           - Advanced: subspace inference method
-
-# TS generation as a representation learning problem
-#   - Ideal molecule representation e.g. interatomic distances, etc.
-#   - Feature mapping comparisons
-#       - How to compare embeddings?
-#   - TS operator comparisons
-#       - Best stage to concat/average
-#       - Best function to use
-
 # TODO
 #   - My unique loss functions here?
 
@@ -91,6 +56,7 @@ class EpochLog:
 
     def get_recorded_batches(self):
         # all the batch_ids that were chosen to record in a list
+        # TODO: sort this out
 
         recorded_batches = []
 
