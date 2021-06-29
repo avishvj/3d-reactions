@@ -1,5 +1,4 @@
 # data processing
-from dataclasses import dataclass
 from ts_vae.data_processors.grambow_processor import ReactionDataset
 from torch_geometric.data import DataLoader
 import numpy as np
@@ -11,8 +10,6 @@ from ts_vae.gaes.ts_creator import TSPostMap
 # experiment recording
 # from ..exp_utils import BatchLog, EpochLog, ExperimentLog [normal]
 from experiments.exp_utils import BatchLog, EpochLog, ExperimentLog # hack for running in notebook
-from typing import List
-import torch.tensor as Tensor
 
 # plotting
 from sklearn.manifold import TSNE
@@ -41,7 +38,7 @@ def train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader):
     # TODO: one ae or two?, maybe need one opt for TS_PostMap rather than two opts for r/p_nec_ae
 
     epoch_log = EpochLog()
-    final_res = []
+    final_embs = []
     total_loss = 0
     
     for batch_id, rxn_batch in enumerate(loader):
@@ -57,10 +54,11 @@ def train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader):
         p_params = rxn_batch.x_p, rxn_batch.edge_index_p, rxn_batch.edge_attr_p, rxn_batch.pos_p
         batch_size = len(rxn_batch.idx)
         max_num_atoms = sum(rxn_batch.num_atoms).item() # add this in because sometimes we get hanging atoms if bonds broken
+        batch_node_vecs = rxn_batch.x_r_batch, rxn_batch.x_p_batch # for recreating graphs, TODO: {x_r/x_p/x_ts}_batch?
         
         # pass params into ts_creator and get ts feats
-        ts_creator = TSPostMap('average', r_params, p_params, r_nec_ae, p_nec_ae)
-        node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out = ts_creator()
+        ts_creator = TSPostMap('average', r_params, p_params, batch_node_vecs, r_nec_ae, p_nec_ae)
+        node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out, graph_emb = ts_creator()
 
         # ground truth values
         ts_node_feats, ts_edge_index, ts_edge_attr, ts_coords = rxn_batch.x_ts, rxn_batch.edge_index_ts, rxn_batch.edge_attr_ts, rxn_batch.pos_ts
@@ -80,13 +78,13 @@ def train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader):
         p_nec_opt.step()
 
         # log batch results
-        batch_log = BatchLog(batch_size, batch_id, max_num_atoms,
+        batch_log = BatchLog(batch_size, batch_id, max_num_atoms, batch_node_vecs,
                              coord_loss.item(), adj_loss.item(), node_loss.item(), batch_loss.item())
         epoch_log.add_batch(batch_log)
-        batch_res = (node_emb, edge_emb, rxn_batch)
-        final_res.append(batch_res)
+        batch_embs = (node_emb, edge_emb, graph_emb, rxn_batch)
+        final_embs.append(batch_embs)
     
-    return total_loss / batch_id, epoch_log, final_res
+    return total_loss / batch_id, epoch_log, final_embs
 
 def ts_interpolation(experiment_params, model_params, loaders):
     
@@ -102,12 +100,14 @@ def ts_interpolation(experiment_params, model_params, loaders):
     for epoch in range(1, epochs):
         train_loss, train_epoch_log, _ = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, train_loader)
         experiment_log.add_epoch(train_epoch_log)
+        # return embs, then experiment_log.add_embs_and_batch(embs)
         print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
     
-    # final epoch to get embeddings
-    train_loss, train_epoch_log, final_res = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, train_loader)
+    # final epoch and save embeddings
+    train_loss, train_epoch_log, final_embs = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, train_loader)
     experiment_log.add_epoch(train_epoch_log)
-    experiment_log.add_embs_and_batch(final_res)
+    experiment_log.add_embs_and_batch(final_embs)
+    print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
     
     return experiment_log
 
@@ -126,19 +126,14 @@ def display_embeddings(exp_log):
     # get each ts from batch and put consecutively in list
     ts_embs = [ts_emb for ts_emb_batch in ts_emb_batches for ts_emb in ts_emb_batch]
 
-    # what's th
+
     # create graph embs on train set: map node+edge embs -> graph emb
     #   - do for r_gt, p_gt, ts_gt separately; do for pre, post map ts_pred; display these five
     #   - if higher dim emb, use pca or tsne and see if difference
     # fig 4: compare test vs train embeddings
     #   - create test embs
     #   - plot cosine loss
-    
-    
-
-    # what has the model learned
-    #   - fig 3: look at weights corresponding to bonds
-    
+        
     pass
 
 

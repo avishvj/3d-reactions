@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
+from torch_geometric.nn.glob.glob import global_mean_pool
 
 from ..utils import reset
 
 # mostly lifted from original egnn: https://github.com/vgsatorras/egnn/
+# TODO: change train, test, main for graph emb
 
 def unsorted_segment_sum(edge_attr, row, num_segments):
     result_shape = (num_segments, edge_attr.size(1))
@@ -58,11 +60,15 @@ class NodeEdgeCoord_AE(nn.Module):
         reset(self.W)
         reset(self.b)
     
-    def forward(self, node_feats, edge_index, edge_attr, coords):
+    def forward(self, node_feats, edge_index, edge_attr, coords, node_batch_vec):
         # encode then decode
         node_emb, edge_emb, coord_out = self.encode(node_feats, edge_index, edge_attr, coords)
         recon_node_fs, recon_edge_fs, adj_pred = self.decode(node_emb, edge_emb)
-        return node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out
+        
+        # testing graph emb
+        graph_emb = global_mean_pool(node_emb, node_batch_vec)
+        
+        return node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out, graph_emb
 
     def encode(self, node_feats, edge_index, edge_attr, coords):
         node_out, edge_out, coord_out = self._modules["NodeEdgeCoord"](node_feats, edge_index, edge_attr, coords)

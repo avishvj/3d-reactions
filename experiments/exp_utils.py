@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 import torch.tensor as Tensor
 
 # TODO
@@ -13,6 +13,7 @@ class BatchLog:
     batch_size: int
     batch_counter: int
     num_nodes: int
+    batch_node_vecs: Tuple[Tensor, Tensor]
 
     # losses
     coord_loss: float

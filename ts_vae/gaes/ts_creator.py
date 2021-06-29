@@ -21,13 +21,14 @@ class TSCreatorBase(nn.Module):
         - Combination function passed in as string with dictionary mapping to function.
     """
 
-    def __init__(self, comb_func, r_params, p_params):
+    def __init__(self, comb_func, r_params, p_params, batch_node_vecs):
         super(TSCreatorBase, self).__init__()
         assert comb_func in combination_funcs.keys(), "Combination function not valid."
         self.comb_func = comb_func
         # features for r and p from batch: node_feats, edge_index, edge_attr, coords
         self.r_params = r_params
         self.p_params = p_params
+        self.batch_node_vecs = batch_node_vecs
     
     def forward(self):
         return self.create_ts()
@@ -47,15 +48,15 @@ class TSPostMap(TSCreatorBase):
         - {r/p}_mapped: node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out
     """
 
-    def __init__(self, comb_func, r_params, p_params, r_mapper, p_mapper):
-        super(TSPostMap, self).__init__(comb_func, r_params, p_params)
+    def __init__(self, comb_func, r_params, p_params, batch_node_vecs, r_mapper, p_mapper):
+        super(TSPostMap, self).__init__(comb_func, r_params, p_params, batch_node_vecs)
         # feature mappers e.g. nec_ae
         self.r_mapper = r_mapper
         self.p_mapper = p_mapper
     
     def create_ts(self):
-        r_mapped = self.r_mapper(*(self.r_params))
-        p_mapped = self.p_mapper(*(self.p_params))
+        r_mapped = self.r_mapper(*(self.r_params), self.batch_node_vecs[0])
+        p_mapped = self.p_mapper(*(self.p_params), self.batch_node_vecs[1])
         ts_mapped = self.combine_r_and_p(r_mapped, p_mapped)
         return ts_mapped
 
@@ -77,14 +78,15 @@ class TSPreMap(TSCreatorBase):
         - Should use this to follow the MIT model more closely.
     """
 
-    def __init__(self, comb_func, r_params, p_params, ts_mapper):
-        super(TSPreMap, self).__init__(comb_func, r_params, p_params)
+    def __init__(self, comb_func, r_params, p_params, batch_node_vecs, ts_mapper):
+        # batch_node_vecs here is just one vec for ts
+        super(TSPreMap, self).__init__(comb_func, r_params, p_params, batch_node_vecs)
         # single ts mapper
         self.ts_mapper = ts_mapper
     
     def create_ts(self):
         ts_params = self.combine_r_and_p()
-        ts_mapped = self.ts_mapper(*ts_params)
+        ts_mapped = self.ts_mapper(*ts_params, self.batch_node_vecs[0])
         return ts_mapped
 
     def combine_r_and_p(self):
