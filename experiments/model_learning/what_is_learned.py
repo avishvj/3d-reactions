@@ -6,7 +6,7 @@ import numpy as np
 
 # my model
 from ts_vae.gaes.nec_gae import NodeEdgeCoord_AE
-from ts_vae.gaes.ts_operator import TS_PostMap
+from ts_vae.gaes.ts_creator import TSPostMap
 
 # experiment recording
 # from ..exp_utils import BatchLog, EpochLog, ExperimentLog [normal]
@@ -158,7 +158,7 @@ def train_nec_ts(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader):
         max_num_atoms = sum(rxn_batch.num_atoms).item() # add this in because sometimes we get hanging atoms if bonds broken
         
         # pass params into ts_creator
-        ts_creator = TS_PostMap('linear_combination', r_params, p_params, r_nec_ae, p_nec_ae)
+        ts_creator = TSPostMap('average', r_params, p_params, r_nec_ae, p_nec_ae)
         node_emb, edge_emb, recon_node_fs, recon_edge_fs, adj_pred, coord_out = ts_creator()
 
         # ground truth values
