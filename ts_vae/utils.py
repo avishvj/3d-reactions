@@ -19,6 +19,18 @@ def reset(nn):
         else:
             _reset(nn)
 
+### remove files
+
+# remove processed files
+import os
+import glob
+
+def remove_files():
+    files = glob.glob(r'data/processed/*')
+    for f in files:
+        os.remove(f)
+    print("Files removed.")    
+
 
 ### distance geometry funcs
 

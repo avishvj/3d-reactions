@@ -13,7 +13,7 @@ data/*
 spare_code.ipynb
 
 # experiments
-*/figs/*
+*figs*
 
 # aml
 *.ipynb_aml_checkpoints/*

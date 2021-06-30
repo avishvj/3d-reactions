@@ -110,6 +110,7 @@ def ts_interpolation(experiment_params, model_params, loaders):
     train_loss, train_epoch_log, final_embs = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, train_loader)
     experiment_log.add_epoch(train_epoch_log)
     experiment_log.add_embs_and_batch(final_embs)
+    epoch += 1
     print(f"===== Final training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
     
     return experiment_log
