@@ -12,7 +12,6 @@ from ts_vae.gaes.ts_creator import TSPostMap
 from experiments.exp_utils import BatchLog, EpochLog, ExperimentLog # hack for running in notebook
 
 # plotting
-from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 
 # torch, torch geometric
@@ -33,7 +32,7 @@ class Embedding_Exp_Log(ExperimentLog):
         # each embedding is (node_emb, edge_emb, rxn_batch)
         self.embeddings.append(embeddings)
 
-def train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader):
+def train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader, test = False):
     # TODO: one ae or two?, maybe need one opt for TS_PostMap rather than two opts for r/p_nec_ae
 
     epoch_log = EpochLog()
@@ -43,10 +42,14 @@ def train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader):
     for batch_id, rxn_batch in enumerate(loader):
 
         # train mode + zero gradients
-        r_nec_ae.train()
-        r_nec_opt.zero_grad()
-        p_nec_ae.train()
-        p_nec_opt.zero_grad()
+        if not test:
+            r_nec_ae.train()
+            r_nec_opt.zero_grad()
+            p_nec_ae.train()
+            p_nec_opt.zero_grad()
+        else:
+            r_nec_ae.eval()
+            p_nec_ae.eval()
 
         # init required variables for model
         r_params = rxn_batch.x_r, rxn_batch.edge_index_r, rxn_batch.edge_attr_r, rxn_batch.pos_r
@@ -75,9 +78,11 @@ def train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, loader):
         node_loss = F.mse_loss(recon_node_fs, ts_node_feats) # scale: e-1 --> e-2, 10 epochs: 0.7 -> 0.05
         batch_loss = adj_loss + coord_loss + node_loss
         total_loss += batch_loss
-        batch_loss.backward()
-        r_nec_opt.step()
-        p_nec_opt.step()
+
+        if not test:
+            batch_loss.backward()
+            r_nec_opt.step()
+            p_nec_opt.step()
 
         # log batch results
         batch_log = BatchLog(batch_size, batch_id, max_num_atoms, batch_node_vecs,
@@ -95,28 +100,30 @@ def ts_interpolation(experiment_params, model_params, loaders):
     r_nec_ae, r_nec_opt, p_nec_ae, p_nec_opt = model_params
     train_loader, test_loader = loaders
 
-    # log training
+    # log training and testing
     experiment_log = Embedding_Exp_Log(num_rxns, tt_split, batch_size, epochs, recorded_batches)
+    testing_log = Embedding_Exp_Log(num_rxns, tt_split, batch_size, epochs, recorded_batches)
 
-    # training for n-1 epochs, don't save embeddings
-    for epoch in range(1, epochs):
-        train_loss, train_epoch_log, _ = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, train_loader)
+    for epoch in range(1, epochs + 1):
+        train_loss, train_epoch_log, embs = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, train_loader, False)
         experiment_log.add_epoch(train_epoch_log)
-        # return embs, then experiment_log.add_embs_and_batch(embs)
-        # if epoch % 10 == 0:
-        #     print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
-    
-    # final epoch and save embeddings
-    train_loss, train_epoch_log, final_embs = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, train_loader)
-    experiment_log.add_epoch(train_epoch_log)
-    experiment_log.add_embs_and_batch(final_embs)
-    epoch += 1
-    print(f"===== Final training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
-    
-    return experiment_log
+        # only save final embeddings
+        if epoch == epochs: 
+            experiment_log.add_embs_and_batch(embs)
+        # print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
 
-def display_embeddings(exp_log):
-    # rn just node embeddings
+        if epoch % test_interval ==  0:
+            test_loss, _, test_embs = train_tsi(r_nec_ae, p_nec_ae, r_nec_opt, p_nec_opt, test_loader, True)
+            testing_log.add_embs_and_batch(test_embs)
+            print(f'===== Testing epoch: {epoch:03d}, Loss: {test_loss:.4f} =====')
+    
+    return experiment_log, testing_log
+
+def display_embeddings(exp_log, fig, ax):
+    # TODO: include edge emb?
+    # fig 4: compare test vs train embeddings, plot cosine loss
+    # create graph embs on train set: map node+edge embs -> graph emb
+    #   - do for r_gt, p_gt, ts_gt separately; do for pre, post map ts_pred; display these five
 
     final_embs_batched = exp_log.embeddings[-1]
     final_embs = [] # i.e. unbatched
@@ -131,7 +138,7 @@ def display_embeddings(exp_log):
 
     cols = {'r': 'red', 'ts': 'orange', 'p': 'green'}
 
-    fig, ax = plt.subplots(figsize = (8, 8))
+    # fig, ax = plt.subplots(figsize = (8, 8))
 
     ax.scatter(*zip(*r_graph_embs), color = cols['r'])
     ax.scatter(*zip(*ts_graph_embs), color = cols['ts'])
@@ -151,13 +158,16 @@ def display_embeddings(exp_log):
     ax.set_xlabel('Graph Emb Dim 2')
 
     return fig, ax
+    
 
-    # create graph embs on train set: map node+edge embs -> graph emb
-    #   - do for r_gt, p_gt, ts_gt separately; do for pre, post map ts_pred; display these five
-    #   - if higher dim emb, use pca or tsne and see if difference
-    # fig 4: compare test vs train embeddings
-    #   - create test embs
-    #   - plot cosine loss
+def display_train_and_test_embs(train_log, test_log):
+
+    fig, axs = plt.subplots(1, 2, figsize = (16, 8))
+    display_embeddings(train_log, fig, axs[0])
+    display_embeddings(test_log, fig, axs[1])
+
+    return fig, axs
+
 
 
 def run_tsi_experiment(train_ratio = 0.8, batch_size = 5, epochs = 20, test_interval = 10):
@@ -199,16 +209,16 @@ def run_tsi_experiment(train_ratio = 0.8, batch_size = 5, epochs = 20, test_inte
     loaders = (train_loader, test_loader)
 
     print("Starting TS interpolation experiment...")
-    experiment_log = ts_interpolation(experiment_params, model_params, loaders)
+    experiment_log, testing_log = ts_interpolation(experiment_params, model_params, loaders)
     print("Completed experiment, use the experiment log to print results.")
     # print_embeddings(experiment_log)
 
-    return experiment_log
+    return experiment_log, testing_log
 
 
 
 if __name__ == "__main__":
 
     # torch.set_printoptions(precision = 3, sci_mode = False)
-    exp_log = run_tsi_experiment()
+    exp_log, test_log = run_tsi_experiment()
     display_embeddings(exp_log)

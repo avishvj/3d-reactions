@@ -19,9 +19,8 @@ def reset(nn):
         else:
             _reset(nn)
 
-### remove files
+### remove processed files
 
-# remove processed files
 import os
 import glob
 
@@ -30,6 +29,15 @@ def remove_files():
     for f in files:
         os.remove(f)
     print("Files removed.")    
+
+### aggregation funcs
+
+def unsorted_segment_sum(edge_attr, row, num_segments):
+    result_shape = (num_segments, edge_attr.size(1))
+    result = edge_attr.new_full(result_shape, 0) # init empty result tensor
+    row = row.unsqueeze(-1).expand(-1, edge_attr.size(1))
+    result.scatter_add_(0, row, edge_attr) # adds all values from tensor other int self at indices
+    return result
 
 
 ### distance geometry funcs
