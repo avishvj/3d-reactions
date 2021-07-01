@@ -1,5 +1,11 @@
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.utils import to_dense_adj, to_dense_batch
+from experiments.exp_utils import BatchLog, EpochLog
 from ..utils import reset
+import operator
+
 
 def average(r, p):
     if r.shape != p.shape:
@@ -77,6 +83,8 @@ class TS_AE(nn.Module):
 
         return ae_log_dict
     
+    ### main functions used in forward
+
     def combine_r_and_p(self, r_feats, p_feats, comb_func = 'average'):
         assert len(r_feats) == len(p_feats), f"Should map reactant (len: {len(r_feats)}) and \
                product (len: {len(p_feats)}) to same number of features."
@@ -97,6 +105,8 @@ class TS_AE(nn.Module):
         p_decoded = self.decoder(*p_mapped)
         ts_gt_decoded = self.decoder(*ts_gt_mapped)
         return r_decoded, p_decoded, ts_gt_decoded 
+    
+    ### baselines
 
     def coord_baseline(self, r_params, p_params):
         _, _, _, r_coords = r_params
@@ -112,5 +122,95 @@ class TS_AE(nn.Module):
     def postmap(self, r_mapped, p_mapped):
         # take mapped r/p raw feats (i.e. r/p embs), and average
         return self.combine_r_and_p(r_mapped, p_mapped, 'average')
+    
+### training and testing
+
+def train(ts_ae, ts_opt, loader, test = False, train_on_ts = False):
+
+    epoch_log = EpochLog()
+    epoch_ae_res = []
+    total_loss = 0
+
+    for batch_id, rxn_batch in enumerate(loader):
+
+        # train mode + zero gradients
+        if not test:
+            ts_ae.train()
+            ts_opt.zero_grad()
+        else:
+            ts_ae.eval()
+        
+        # init r, p, ts params
+        r_params = rxn_batch.x_r, rxn_batch.edge_index_r, rxn_batch.edge_attr_r, rxn_batch.pos_r
+        p_params = rxn_batch.x_p, rxn_batch.edge_index_p, rxn_batch.edge_attr_p, rxn_batch.pos_p
+        ts_params = rxn_batch.x_ts, rxn_batch.edge_index_ts, rxn_batch.edge_attr_ts, rxn_batch.pos_ts
+        batch_size = len(rxn_batch.idx)
+        max_num_atoms = sum(rxn_batch.num_atoms).item() # add this in because sometimes we get hanging atoms if bonds broken
+        batch_node_vecs = rxn_batch.x_r_batch, rxn_batch.x_p_batch, rxn_batch.x_ts_batch # for recreating graphs
+
+        # run batch pass of ae with params
+        ae_log_dict = ts_ae(r_params, p_params, ts_params, batch_node_vecs)
+
+        # loss and step
+        node_loss, adj_loss, coord_loss, batch_loss = recon_loss(r_params, p_params, ts_params, ae_log_dict, train_on_ts)
+        total_loss += batch_loss
+
+        if not test:
+            batch_loss.backward()
+            ts_opt.step()
+        
+        # log batch results
+        batch_log = BatchLog(batch_size, batch_id, max_num_atoms, batch_node_vecs,
+                             coord_loss.item(), adj_loss.item(), node_loss.item(), batch_loss.item())
+        epoch_log.add_batch(batch_log)
+        epoch_ae_res.append(ae_log_dict)
+    
+    return total_loss / batch_id, epoch_log, epoch_ae_res
+
+### loss functions
+
+def ind_recon_loss(gt_params, max_num_atoms, ae_log_dict, key):
+    # for individual mols e.g. r_params vs ae_log_dict[key = 'r']
+
+    gt_node_feats, gt_edge_index, gt_edge_attr, gt_coords = gt_params
+    mapped, decoded = ae_log_dict[key]
+    node_emb, edge_emb, graph_emb, coord_out = mapped
+    recon_node_fs, recon_edge_fs, adj_pred = decoded
+
+    # adjacency matrix
+    adj_gt = to_dense_adj(gt_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
+    assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape!" 
+
+    # losses
+    node_loss = F.mse_loss(recon_node_fs, gt_node_feats) # scale: e-1 --> e-2, 10 epochs: 0.7 -> 0.05
+    adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # scale: e-1, 10 epochs: 0.5 -> 0.4
+    coord_loss = torch.sqrt(F.mse_loss(coord_out, gt_coords)) # scale: e-1, 10 epochs: 1.1 -> 0.4
+    batch_loss = node_loss + adj_loss + coord_loss
+    
+    return node_loss, adj_loss, coord_loss, batch_loss
+
+def recon_loss(r_params, p_params, ts_params, max_num_atoms, ae_log_dict, train_on_ts = False):
+    # basic version: train on r/p recon
+    # params = node_feats, edge_index, edge_attr, coords
+    # mapped = node_emb, edge_emb, graph_emb, coord_out
+    # decoded = recon_node_fs, recon_edge_fs, adj_pred
+    # losses = node_loss, adj_loss, coord_loss, batch_loss
+
+    r_losses = ind_recon_loss(r_params, max_num_atoms, ae_log_dict, 'r')
+    p_losses = ind_recon_loss(p_params, max_num_atoms, ae_log_dict, 'p')
+    
+    combined_losses = tuple(map(operator.add, r_losses, p_losses))
+
+    if train_on_ts:
+        ts_losses = ind_recon_loss(ts_params, max_num_atoms, ae_log_dict, 'ts')
+        combined_losses = tuple(map(operator.add, combined_losses, ts_losses))
+    
+    return combined_losses
+    
+    
+
+
+
+
     
 
