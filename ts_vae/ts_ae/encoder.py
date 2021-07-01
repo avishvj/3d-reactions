@@ -6,7 +6,7 @@ from torch_geometric.nn.glob.glob import global_mean_pool
 from ..utils import unsorted_segment_sum
 
 class MolEncoder(nn.Module):
-    """ Encoder class that uses NECLayer. """
+    """ Encoder class that uses NECLayer. Have this as general encoder for 3D layers. """
 
     def __init__(self, in_node_nf = 11, in_edge_nf = 4, h_nf = 4, out_nf = 4, emb_nf = 2, act_fn = nn.ReLU(), device = 'cpu'):
         super(MolEncoder, self).__init__()
