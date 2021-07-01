@@ -35,6 +35,10 @@ class TS_AE(nn.Module):
         self.comb_func = comb_func
 
         self.to(device)
+    
+    def reset_parameters(self):
+        reset(self.encoder)
+        reset(self.decoder)
         
     def forward(self, r_params, p_params, ts_params, batch_node_vecs, premap = True, postmap = True, coord_baseline = False):
         # params = node_feats, edge_index, edge_attr, coords

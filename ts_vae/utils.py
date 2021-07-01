@@ -1,12 +1,3 @@
-from rdkit import Chem
-import pymol
-import tempfile, os
-import numpy as np
-from math import sqrt, pi
-
-import torch
-from torch_sparse import SparseTensor
-
 def reset(nn):
     def _reset(item):
         if hasattr(item, 'reset_parameters'):
@@ -39,8 +30,10 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
     result.scatter_add_(0, row, edge_attr) # adds all values from tensor other int self at indices
     return result
 
-
 ### distance geometry funcs
+
+import torch
+from torch_sparse import SparseTensor
 
 def cartesian_to_new(pos, edge_index, num_nodes):
     # https://github.com/divelab/DIG/blob/dig/dig/threedgraph/utils/geometric_computing.py
@@ -70,7 +63,6 @@ def cartesian_to_new(pos, edge_index, num_nodes):
     # ...
 
     return
-
 
 def sparse_to_dense_adj(num_nodes, edge_index):
     # TODO: pyg to_dense_adj() returns same but with added singleton dim 
