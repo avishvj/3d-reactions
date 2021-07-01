@@ -31,6 +31,9 @@ class MolDecoder(nn.Module):
         recon_edge_fs = self.edge_dec_mlp(edge_emb)
         adj_pred = self.decode_to_adj(node_emb)
         return recon_node_fs, recon_edge_fs, adj_pred
+    
+    def decode_to_adj(self):
+        pass
 
 
 

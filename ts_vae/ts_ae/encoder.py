@@ -1,16 +1,3 @@
-# encode r/p, decode r/p/ts
-# premap: combine r/p raw features, then map to ts emb, then decode to ts
-# postmap: map r and p to r and p embs, then combine r and p embs, then decode to ts
-# also encode ts itself separetely on trained version so can compare after
-
-# AE: different concat stages
-#   - MolEncoder: NECLayer
-#   - MolDecoder: defined in itself
-
-
-# sources of randomness
-#   - NECLayer: coord_edge_mlp: xav_uniform init
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
