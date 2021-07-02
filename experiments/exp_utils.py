@@ -78,7 +78,7 @@ class ExperimentLog:
     # experiment metadata: num_rxns, tt_split, batch_size
     # associated gnn_embedding and how it changes
 
-    def __init__(self, num_rxns, tt_split, batch_size, epochs, recorded_batches):
+    def __init__(self, num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches):
         
         self.epoch_logs: List[EpochLog] = []
         
@@ -86,19 +86,20 @@ class ExperimentLog:
         self.num_rxns = num_rxns
         self.tt_split = tt_split
         self.batch_size = batch_size
+        self.epochs = epochs
+        self.test_interval = test_interval
         # batches to record
         if recorded_batches and recorded_batches != []:
             assert max(recorded_batches) < (num_rxns / batch_size), "Maximum batch_id not possible to record"
             assert all(batch_id > -1 for batch_id in recorded_batches), "You are planning to record negative batch ids."
         self.recorded_batches = recorded_batches
 
-    
     def add_epoch(self, epoch_log):
         self.epoch_logs.append(epoch_log)
     
-    def get_num_epochs(self):
-        self.num_epochs = len(self.epoch_logs)
-        return self.num_epochs
+    def get_performed_epochs(self):
+        self.performed_epochs = len(self.epoch_logs)
+        return self.performed_epochs
     
     def get_experiment_losses(self):
         # for each epoch, record the losses

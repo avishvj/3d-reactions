@@ -6,13 +6,34 @@ from experiments.exp_utils import BatchLog, EpochLog
 from ..utils import reset
 import operator
 
-
 def average(r, p):
     if r.shape != p.shape:
         # this happens on edge features since bonds broken and formed
         # current hacky soln: just average min features
         # TODO: proper solution later
-        min_num_fs = min(r.size(0), p.size(0))
+        
+        if r.size(0) != p.size(0):
+            min_num_fs = min(r.size(0), p.size(0))
+            return (r[0:min_num_fs, ] + p[0:min_num_fs, ]) / 2
+        elif r.size(1) != p.size(1):
+            min_num_fs = min(r.size(1), p.size(1))
+            return (r[:, 0:min_num_fs] + p[:, 0:min_num_fs]) / 2
+
+        print("gone too far")
+
+        problem_dim = None
+        if r.size(0) != p.size(0):
+            problem_dim = 0
+        if r.size(1) != p.size(1):
+            problem_dim = 1
+        min_num_fs = min(r.size(problem_dim), p.size(problem_dim))
+        avg = (r[problem_dim][0:min_num_fs] + p[problem_dim][0:min_num_fs]) / 2
+        return avg
+        
+        try:
+            min_num_fs = min(r.size(0), p.size(0))
+        except:
+            min_num_fs = min(r.size(1), p.size(1))
         return (r[0:min_num_fs] + p[0:min_num_fs]) / 2
     else:
         return (r + p) / 2
@@ -56,32 +77,27 @@ class TS_AE(nn.Module):
         r_decoded, p_decoded, ts_gt_decoded = self.decode_mols_gt(r_mapped, p_mapped, ts_gt_mapped)
 
         # record autoencoder pass
-        ae_log_dict = {}
-        ae_log_dict['r'] = (r_mapped, r_decoded)
-        ae_log_dict['p'] = (p_mapped, p_decoded)
-        ae_log_dict['ts_gt'] = (ts_gt_mapped, ts_gt_decoded)
+        batch_ae_res = {}
+        batch_ae_res['r'] = (r_mapped, r_decoded)
+        batch_ae_res['p'] = (p_mapped, p_decoded)
+        batch_ae_res['ts_gt'] = (ts_gt_mapped, ts_gt_decoded)
+        batch_ae_res['batch_node_vecs'] = batch_node_vecs
 
         if premap:
             ts_premapped = self.premap(r_params, p_params, batch_node_vecs)
-            ts_premap_decoded = self.decoder(ts_premapped)
-            ae_log_dict['ts_premap'] = (ts_premapped, ts_premap_decoded)
+            ts_premap_decoded = self.decoder(*ts_premapped)
+            batch_ae_res['ts_premap'] = (ts_premapped, ts_premap_decoded)
         
         if postmap:
             ts_postmapped = self.postmap(r_mapped, p_mapped)
-            ts_postmap_decoded = self.decoder(ts_postmapped)
-            ae_log_dict['ts_postmap'] = (ts_postmapped, ts_postmap_decoded)
+            ts_postmap_decoded = self.decoder(*ts_postmapped)
+            batch_ae_res['ts_postmap'] = (ts_postmapped, ts_postmap_decoded)
         
         if coord_baseline:
             ts_coord_baseline = self.coord_baseline(r_params, p_params)
-            ae_log_dict['coord_baseline'] = ts_coord_baseline
+            batch_ae_res['coord_baseline'] = ts_coord_baseline
 
-        # have three ts mapped: compare in emb space and then decode and compare
-        # loss function
-        # train on r, p recon + coords OR r, p, ts recon + coords
-
-        # loss functions: emb, coord, recon space
-
-        return ae_log_dict
+        return batch_ae_res
     
     ### main functions used in forward
 
@@ -104,7 +120,7 @@ class TS_AE(nn.Module):
         r_decoded = self.decoder(*r_mapped)
         p_decoded = self.decoder(*p_mapped)
         ts_gt_decoded = self.decoder(*ts_gt_mapped)
-        return r_decoded, p_decoded, ts_gt_decoded 
+        return r_decoded, p_decoded, ts_gt_decoded
     
     ### baselines
 
@@ -114,15 +130,56 @@ class TS_AE(nn.Module):
         return self.combine_r_and_p(r_coords, p_coords, 'average')
 
     def premap(self, r_params, p_params, batch_node_vecs):
-        # average r/p raw features as ts params, then encode to ts emb, TODO: r+p batch vec
-        r_batch_vec, _, _ = batch_node_vecs
+        # average r/p raw features as ts params, then encode to ts emb, TODO: r+p/2 batch vec
+        # NOTE: should fail if r has more edges than p, will have to use a min max in average()
+        r_batch_vec, p_batch_vec, _ = batch_node_vecs
         ts_params_premap = self.combine_r_and_p(r_params, p_params, 'average')
+        ts_params_premap[1] = ts_params_premap[1].long()
         return self.encoder(*ts_params_premap, r_batch_vec)
 
     def postmap(self, r_mapped, p_mapped):
         # take mapped r/p raw feats (i.e. r/p embs), and average
         return self.combine_r_and_p(r_mapped, p_mapped, 'average')
     
+    ### loss functions
+
+    def recon_loss(self, r_params, p_params, ts_params, max_num_atoms, batch_ae_res, train_on_ts = False):
+        # params = node_feats, edge_index, edge_attr, coords
+        # mapped = node_emb, edge_emb, graph_emb, coord_out
+        # decoded = recon_node_fs, recon_edge_fs, adj_pred
+        # losses = node_loss, adj_loss, coord_loss, batch_loss
+
+        r_losses = self.ind_recon_loss(r_params, max_num_atoms, batch_ae_res, 'r')
+        p_losses = self.ind_recon_loss(p_params, max_num_atoms, batch_ae_res, 'p')
+        
+        combined_losses = tuple(map(operator.add, r_losses, p_losses))
+
+        if train_on_ts:
+            ts_losses = self.ind_recon_loss(ts_params, max_num_atoms, batch_ae_res, 'ts')
+            combined_losses = tuple(map(operator.add, combined_losses, ts_losses))
+        
+        return combined_losses
+
+    def ind_recon_loss(self, gt_params, max_num_atoms, batch_ae_res, key):
+        # for individual mols e.g. r_params vs batch_ae_res[key = 'r']
+
+        gt_node_feats, gt_edge_index, gt_edge_attr, gt_coords = gt_params
+        mapped, decoded = batch_ae_res[key]
+        node_emb, edge_emb, graph_emb, coord_out = mapped
+        recon_node_fs, recon_edge_fs, adj_pred = decoded
+
+        # adjacency matrix
+        adj_gt = to_dense_adj(gt_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
+        assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape!" 
+
+        # losses
+        node_loss = F.mse_loss(recon_node_fs, gt_node_feats) # scale: e-1 --> e-2, 10 epochs: 0.7 -> 0.05
+        adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # scale: e-1, 10 epochs: 0.5 -> 0.4
+        coord_loss = torch.sqrt(F.mse_loss(coord_out, gt_coords)) # scale: e-1, 10 epochs: 1.1 -> 0.4
+        batch_loss = node_loss + adj_loss + coord_loss
+        
+        return node_loss, adj_loss, coord_loss, batch_loss
+
 ### training and testing
 
 def train(ts_ae, ts_opt, loader, test = False, train_on_ts = False):
@@ -149,10 +206,10 @@ def train(ts_ae, ts_opt, loader, test = False, train_on_ts = False):
         batch_node_vecs = rxn_batch.x_r_batch, rxn_batch.x_p_batch, rxn_batch.x_ts_batch # for recreating graphs
 
         # run batch pass of ae with params
-        ae_log_dict = ts_ae(r_params, p_params, ts_params, batch_node_vecs)
+        batch_ae_res = ts_ae(r_params, p_params, ts_params, batch_node_vecs)
 
         # loss and step
-        node_loss, adj_loss, coord_loss, batch_loss = recon_loss(r_params, p_params, ts_params, ae_log_dict, train_on_ts)
+        node_loss, adj_loss, coord_loss, batch_loss = ts_ae.recon_loss(r_params, p_params, ts_params, max_num_atoms, batch_ae_res, train_on_ts)
         total_loss += batch_loss
 
         if not test:
@@ -163,49 +220,11 @@ def train(ts_ae, ts_opt, loader, test = False, train_on_ts = False):
         batch_log = BatchLog(batch_size, batch_id, max_num_atoms, batch_node_vecs,
                              coord_loss.item(), adj_loss.item(), node_loss.item(), batch_loss.item())
         epoch_log.add_batch(batch_log)
-        epoch_ae_res.append(ae_log_dict)
+        epoch_ae_res.append(batch_ae_res)
     
     return total_loss / batch_id, epoch_log, epoch_ae_res
 
-### loss functions
 
-def ind_recon_loss(gt_params, max_num_atoms, ae_log_dict, key):
-    # for individual mols e.g. r_params vs ae_log_dict[key = 'r']
-
-    gt_node_feats, gt_edge_index, gt_edge_attr, gt_coords = gt_params
-    mapped, decoded = ae_log_dict[key]
-    node_emb, edge_emb, graph_emb, coord_out = mapped
-    recon_node_fs, recon_edge_fs, adj_pred = decoded
-
-    # adjacency matrix
-    adj_gt = to_dense_adj(gt_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
-    assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape!" 
-
-    # losses
-    node_loss = F.mse_loss(recon_node_fs, gt_node_feats) # scale: e-1 --> e-2, 10 epochs: 0.7 -> 0.05
-    adj_loss = F.binary_cross_entropy(adj_pred, adj_gt) # scale: e-1, 10 epochs: 0.5 -> 0.4
-    coord_loss = torch.sqrt(F.mse_loss(coord_out, gt_coords)) # scale: e-1, 10 epochs: 1.1 -> 0.4
-    batch_loss = node_loss + adj_loss + coord_loss
-    
-    return node_loss, adj_loss, coord_loss, batch_loss
-
-def recon_loss(r_params, p_params, ts_params, max_num_atoms, ae_log_dict, train_on_ts = False):
-    # basic version: train on r/p recon
-    # params = node_feats, edge_index, edge_attr, coords
-    # mapped = node_emb, edge_emb, graph_emb, coord_out
-    # decoded = recon_node_fs, recon_edge_fs, adj_pred
-    # losses = node_loss, adj_loss, coord_loss, batch_loss
-
-    r_losses = ind_recon_loss(r_params, max_num_atoms, ae_log_dict, 'r')
-    p_losses = ind_recon_loss(p_params, max_num_atoms, ae_log_dict, 'p')
-    
-    combined_losses = tuple(map(operator.add, r_losses, p_losses))
-
-    if train_on_ts:
-        ts_losses = ind_recon_loss(ts_params, max_num_atoms, ae_log_dict, 'ts')
-        combined_losses = tuple(map(operator.add, combined_losses, ts_losses))
-    
-    return combined_losses
     
     
 

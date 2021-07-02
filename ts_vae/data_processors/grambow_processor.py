@@ -131,7 +131,7 @@ class ReactionDataset(InMemoryDataset):
 
     TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
     BONDS = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
-    TEMP_MOLS_LIMIT = 8000
+    TEMP_MOLS_LIMIT = 100
 
     def __init__(self, root_folder, transform = None, pre_transform = None):
 

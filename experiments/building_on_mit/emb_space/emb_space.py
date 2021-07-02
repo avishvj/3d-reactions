@@ -168,8 +168,6 @@ def display_train_and_test_embs(train_log, test_log):
 
     return fig, axs
 
-
-
 def run_tsi_experiment(train_ratio = 0.8, batch_size = 5, epochs = 20, test_interval = 10):
 
     torch.set_printoptions(precision = 3, sci_mode = False)
@@ -204,6 +202,7 @@ def run_tsi_experiment(train_ratio = 0.8, batch_size = 5, epochs = 20, test_inte
 
     # ts interpolation experiment: train model, get embeddings from train and test
     recorded_batches = []
+    # change to num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches
     experiment_params = (num_rxns, train_ratio, batch_size, recorded_batches, epochs, test_interval)
     model_params = (r_nec_ae, r_nec_opt, p_nec_ae, p_nec_opt)
     loaders = (train_loader, test_loader)
