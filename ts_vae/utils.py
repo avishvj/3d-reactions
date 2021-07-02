@@ -64,6 +64,21 @@ def cartesian_to_new(pos, edge_index, num_nodes):
 
     return
 
+
+import numpy as np
+def interatomic_distance(atom_1, atom_2):
+    return np.linalg.norm(atom_1.position - atom_2.position)
+
+def interatomic_distance_matrix_initialise(mol):
+    num_atoms = mol.GetNumAtoms()
+    matrix = np.zeros(shape=(num_atoms, num_atoms), dtype=np.float)
+    for i in range(num_atoms):
+        for j in range(i + 1, num_atoms):
+            # create triangular matrix
+            matrix[i, j] = 1e3 # max_dist
+            matrix[j, i] = 1e-3 # min dist
+
+
 def sparse_to_dense_adj(num_nodes, edge_index):
     # TODO: pyg to_dense_adj() returns same but with added singleton dim 
     # i.e. pyg: [1, num_nodes, num_nodes]; this: [num_nodes, num_nodes]
