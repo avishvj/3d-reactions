@@ -94,54 +94,63 @@ def tsi(experiment_params, model_params, loaders):
     
     return train_log, test_log
 
-def display_train_and_test_embs(train_log, test_log):
+def display_train_and_test_embs(train_log, test_log, which_to_print):
+    # which_to_print is dict
     fig, axs = plt.subplots(1, 2, figsize = (16, 8))
-    display_embs(train_log, fig, axs[0])
-    display_embs(test_log, fig, axs[1])
+    display_embs(train_log, fig, axs[0], which_to_print)
+    display_embs(test_log, fig, axs[1], which_to_print)
     return fig, axs
 
-def display_embs(exp_log, fig, ax):
+def display_embs(exp_log, fig, ax, which_to_print):
     # TODO? fig 4: compare test vs train embeddings, plot cosine loss
-
     # ae_log_dict = {r/p/ts_gt/ts_premap/ts_postmap : (mapped, decoded); batch_node_vecs : batch_node_vecs}
     # mapped = node_emb, edge_emb, graph_emb, coord_out
     # decoded = recon_node_fs, recon_edge_fs, adj_pred
 
+    r, p, ts_gt, ts_premap, ts_postmap = which_to_print['r'], which_to_print['p'], \
+        which_to_print['ts_gt'], which_to_print['ts_premap'], which_to_print['ts_postmap']
     final_res_batched = exp_log.epoch_ae_results[-1] # = [{batch_res}, {batch_res}, .., {batch_res}]
-    final_graph_embs = []
+    graph_embs = {'r': [], 'p': [], 'ts_gt': [], 'ts_premap': [], 'ts_postmap': [], 'ts_node': []}
     
     for batch_res in final_res_batched:
         node_embs = batch_res['ts_postmap'][0][0]
         ts_batch_vec = batch_res['batch_node_vecs'][2]
         ts_node_emb_batch = to_dense_batch(node_embs, ts_batch_vec)[0] # [0] cos just append tensors, not true/false values
-        
+
         # graph embs
-        r_graph_embs, p_graph_embs, ts_gt_graph_embs = batch_res['r'][0][2], batch_res['p'][0][2], batch_res['ts_gt'][0][2]
-        ts_premap_graph_embs, ts_postmap_graph_embs = batch_res['ts_premap'][0][2], batch_res['ts_postmap'][0][2]
+        r_graph_embs, p_graph_embs = batch_res['r'][0][2], batch_res['p'][0][2]
+        if ts_gt:
+            ts_gt_graph_embs = batch_res['ts_gt'][0][2]
+        if ts_premap:
+            ts_premap_graph_embs = batch_res['ts_premap'][0][2]
+        if ts_postmap:
+            ts_postmap_graph_embs = batch_res['ts_postmap'][0][2]
 
         for mol_id, ts_node_emb in enumerate(ts_node_emb_batch):
-            graph_emb_tuple = (ts_node_emb, r_graph_embs[mol_id], p_graph_embs[mol_id], ts_gt_graph_embs[mol_id], \
-                ts_premap_graph_embs[mol_id], ts_postmap_graph_embs[mol_id])
-            final_graph_embs.append(graph_emb_tuple)
-
-    # something simpler? r_graph_embs = [batch_res['r'][0][2] for batch_res in final_res_batched for mol in batch_node_vec]
-
-    r_graph_embs = [r_graph_emb.detach().numpy() for (_, r_graph_emb, _, _, _, _) in final_graph_embs]
-    p_graph_embs = [p_graph_emb.detach().numpy() for (_, _, p_graph_emb, _, _, _) in final_graph_embs]
-    ts_gt_graph_embs = [ts_gt_graph_emb.detach().numpy() for (_, _, _, ts_gt_graph_emb, _, _) in final_graph_embs]
-    ts_premap_graph_embs = [ts_premap_graph_emb.detach().numpy() for (_, _, _, _, ts_premap_graph_emb, _) in final_graph_embs]
-    ts_postmap_graph_embs = [ts_postmap_graph_emb.detach().numpy() for (_, _, _, _, _, ts_postmap_graph_emb) in final_graph_embs]
-
-    cols = {'r': 'red', 'p': 'green', 'ts_gt': 'orange', 'ts_premap': 'yellow', 'ts_postmap': 'blue'}
+            graph_embs['ts_node'].append(ts_node_emb)
+            graph_embs['r'].append(r_graph_embs[mol_id].detach().numpy())
+            graph_embs['p'].append(p_graph_embs[mol_id].detach().numpy())
+            if ts_gt:
+                graph_embs['ts_gt'].append(ts_gt_graph_embs[mol_id].detach().numpy())
+            if ts_premap:
+                graph_embs['ts_premap'].append(ts_premap_graph_embs[mol_id].detach().numpy())
+            if ts_postmap:
+                graph_embs['ts_postmap'].append(ts_postmap_graph_embs[mol_id].detach().numpy())
 
     # fig, ax = plt.subplots(figsize = (8, 8))
 
-    ax.scatter(*zip(*r_graph_embs), color = cols['r'])
-    ax.scatter(*zip(*p_graph_embs), color = cols['p'])
-    ax.scatter(*zip(*ts_gt_graph_embs), color = cols['ts_gt'])
-    ax.scatter(*zip(*ts_premap_graph_embs), color = cols['ts_premap'])
-    ax.scatter(*zip(*ts_postmap_graph_embs), color = cols['ts_postmap'])
-
+    # colours, scatter plot
+    cols = {'r': 'red', 'p': 'green', 'ts_gt': 'orange', 'ts_premap': 'yellow', 'ts_postmap': 'blue'}
+    if r:
+        ax.scatter(*zip(*graph_embs['r']), color = cols['r'])
+    if p:
+        ax.scatter(*zip(*graph_embs['p']), color = cols['p'])
+    if ts_gt:
+        ax.scatter(*zip(*graph_embs['ts_gt']), color = cols['ts_gt'])
+    if ts_premap:
+        ax.scatter(*zip(*graph_embs['ts_premap']), color = cols['ts_premap'])
+    if ts_postmap:
+        ax.scatter(*zip(*graph_embs['ts_postmap']), color = cols['ts_postmap'])
     markers = [plt.Line2D([0,0], [0,0], color = color, marker = 'o', linestyle = '') for color in  cols.values()]
     ax.legend(markers, cols.keys())
 
@@ -156,4 +165,3 @@ def display_embs(exp_log, fig, ax):
     ax.set_xlabel('Graph Emb Dim 2')
 
     return fig, ax
-
