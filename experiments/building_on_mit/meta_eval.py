@@ -1,2 +1,0 @@
-# UQ
-# weights
