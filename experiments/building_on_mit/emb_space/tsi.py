@@ -6,7 +6,7 @@ from torch_geometric.data import DataLoader
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.utils import to_dense_adj, to_dense_batch
+from torch_geometric.utils import to_dense_batch
 
 # model
 from ts_vae.ts_ae.encoder import MolEncoder
@@ -14,21 +14,22 @@ from ts_vae.ts_ae.decoder import MolDecoder
 from ts_vae.ts_ae.ae import TS_AE, train
 
 # experiment
-from experiments.exp_utils import BatchLog, EpochLog, ExperimentLog
+from experiments.exp_utils import ExperimentLog
 import matplotlib.pyplot as plt
 import numpy as np
 
 class TSI_ExpLog(ExperimentLog):
     # tsi: transition state interpolation
 
-    def __init__(self, num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches):
+    def __init__(self, num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts):
         super(TSI_ExpLog, self).__init__(num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches)
+        self.train_on_ts = train_on_ts
         self.epoch_ae_results = []
     
     def add_epoch_result(self, res):
         self.epoch_ae_results.append(res)
 
-def tsi_main(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 10):
+def tsi_main(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 10, train_on_ts = False):
 
     torch.set_printoptions(precision = 3, sci_mode = False)
 
@@ -58,7 +59,7 @@ def tsi_main(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 10):
 
     # tsi experiment: train model, get embs from train and test
     recorded_batches = []
-    experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches)
+    experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts)
     model_params = (ts_ae, ts_opt)
     loaders = (train_loader, test_loader)
 
@@ -71,7 +72,7 @@ def tsi_main(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 10):
 def tsi(experiment_params, model_params, loaders):
     
     # get params out
-    num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches = experiment_params
+    num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts = experiment_params
     ts_ae, ts_opt = model_params
     train_loader, test_loader = loaders
 
@@ -81,27 +82,29 @@ def tsi(experiment_params, model_params, loaders):
 
     for epoch in range(1, epochs + 1):
         
-        train_loss, train_epoch_stats, train_epoch_res = train(ts_ae, ts_opt, train_loader)
+        train_loss, train_epoch_stats, train_epoch_res = train(ts_ae, ts_opt, train_loader, False, train_on_ts)
         train_log.add_epoch(train_epoch_stats)
+        print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
         
         if epoch == epochs: # only add final train res
             train_log.add_epoch_result(train_epoch_res)
         
         if epoch % test_interval == 0:
-            test_loss, test_epoch_stats, test_epoch_res = train(ts_ae, ts_opt, test_loader, test = True)
+            test_loss, test_epoch_stats, test_epoch_res = train(ts_ae, ts_opt, test_loader, True, train_on_ts)
             test_log.add_epoch(test_epoch_stats)
             test_log.add_epoch_result(test_epoch_res)
+            print(f"===== Testing epoch {epoch:03d} complete with loss: {test_loss:.4f} ====")
     
     return train_log, test_log
 
 def display_train_and_test_embs(train_log, test_log, which_to_print):
     # which_to_print is dict
     fig, axs = plt.subplots(1, 2, figsize = (16, 8))
-    display_embs(train_log, fig, axs[0], which_to_print)
-    display_embs(test_log, fig, axs[1], which_to_print)
+    display_embs(train_log, fig, axs[0], which_to_print, 'Train')
+    display_embs(test_log, fig, axs[1], which_to_print, 'Test')
     return fig, axs
 
-def display_embs(exp_log, fig, ax, which_to_print):
+def display_embs(exp_log, fig, ax, which_to_print, lab):
     # TODO? fig 4: compare test vs train embeddings, plot cosine loss
     # ae_log_dict = {r/p/ts_gt/ts_premap/ts_postmap : (mapped, decoded); batch_node_vecs : batch_node_vecs}
     # mapped = node_emb, edge_emb, graph_emb, coord_out
@@ -159,7 +162,7 @@ def display_embs(exp_log, fig, ax, which_to_print):
     train_ratio = exp_log.tt_split
     batch_size = exp_log.batch_size
     epochs = exp_log.get_performed_epochs()
-    title = f"{num_rxns} Reactions, Train Ratio: {train_ratio}, {epochs} Epochs, Batch Size: {batch_size}"
+    title = f"[{lab}] {num_rxns} Reactions, Train Ratio: {train_ratio}, {epochs} Epochs, Batch Size: {batch_size}"
     ax.set_title(title)
     ax.set_ylabel('Graph Emb Dim 1')
     ax.set_xlabel('Graph Emb Dim 2')

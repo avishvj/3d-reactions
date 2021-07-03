@@ -9,32 +9,13 @@ import operator
 def average(r, p):
     if r.shape != p.shape:
         # this happens on edge features since bonds broken and formed
-        # current hacky soln: just average min features
-        # TODO: proper solution later
-        
+        # current hacky soln: just average min features, TODO: proper soln
         if r.size(0) != p.size(0):
             min_num_fs = min(r.size(0), p.size(0))
             return (r[0:min_num_fs, ] + p[0:min_num_fs, ]) / 2
         elif r.size(1) != p.size(1):
             min_num_fs = min(r.size(1), p.size(1))
             return (r[:, 0:min_num_fs] + p[:, 0:min_num_fs]) / 2
-
-        print("gone too far")
-
-        problem_dim = None
-        if r.size(0) != p.size(0):
-            problem_dim = 0
-        if r.size(1) != p.size(1):
-            problem_dim = 1
-        min_num_fs = min(r.size(problem_dim), p.size(problem_dim))
-        avg = (r[problem_dim][0:min_num_fs] + p[problem_dim][0:min_num_fs]) / 2
-        return avg
-        
-        try:
-            min_num_fs = min(r.size(0), p.size(0))
-        except:
-            min_num_fs = min(r.size(1), p.size(1))
-        return (r[0:min_num_fs] + p[0:min_num_fs]) / 2
     else:
         return (r + p) / 2
 
@@ -155,7 +136,7 @@ class TS_AE(nn.Module):
         combined_losses = tuple(map(operator.add, r_losses, p_losses))
 
         if train_on_ts:
-            ts_losses = self.ind_recon_loss(ts_params, max_num_atoms, batch_ae_res, 'ts')
+            ts_losses = self.ind_recon_loss(ts_params, max_num_atoms, batch_ae_res, 'ts_gt')
             combined_losses = tuple(map(operator.add, combined_losses, ts_losses))
         
         return combined_losses
