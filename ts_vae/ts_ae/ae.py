@@ -205,7 +205,48 @@ def train(ts_ae, ts_opt, loader, test = False, train_on_ts = False):
     
     return total_loss / batch_id, epoch_log, epoch_ae_res
 
+def train_on_ts(ts_ae, ts_opt, loader, test = False):
+    # just train on ts
 
+    epoch_log = EpochLog()
+    epoch_ae_res = []
+    total_loss = 0
+
+    for batch_id, rxn_batch in enumerate(loader):
+
+        # train mode + zero gradients
+        if not test:
+            ts_ae.train()
+            ts_opt.zero_grad()
+        else:
+            ts_ae.eval()
+        
+        # init r, p, ts params
+        r_params = rxn_batch.x_r, rxn_batch.edge_index_r, rxn_batch.edge_attr_r, rxn_batch.pos_r
+        p_params = rxn_batch.x_p, rxn_batch.edge_index_p, rxn_batch.edge_attr_p, rxn_batch.pos_p
+        ts_params = rxn_batch.x_ts, rxn_batch.edge_index_ts, rxn_batch.edge_attr_ts, rxn_batch.pos_ts
+        batch_size = len(rxn_batch.idx)
+        max_num_atoms = sum(rxn_batch.num_atoms).item() # add this in because sometimes we get hanging atoms if bonds broken
+        batch_node_vecs = rxn_batch.x_r_batch, rxn_batch.x_p_batch, rxn_batch.x_ts_batch # for recreating graphs
+
+        # run batch pass of ae with params
+        batch_ae_res = ts_ae(r_params, p_params, ts_params, batch_node_vecs)
+
+        # loss and step
+        node_loss, adj_loss, coord_loss, batch_loss = ts_ae.ind_recon_loss(ts_params, max_num_atoms, batch_ae_res, 'ts_gt')
+        total_loss += batch_loss
+
+        if not test:
+            batch_loss.backward()
+            ts_opt.step()
+        
+        # log batch results
+        batch_log = BatchLog(batch_size, batch_id, max_num_atoms, batch_node_vecs,
+                             coord_loss.item(), adj_loss.item(), node_loss.item(), batch_loss.item())
+        epoch_log.add_batch(batch_log)
+        epoch_ae_res.append(batch_ae_res)
+    
+    return total_loss / batch_id, epoch_log, epoch_ae_res
     
     
 

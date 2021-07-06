@@ -11,7 +11,7 @@ from torch_geometric.utils import to_dense_batch
 # model
 from ts_vae.ts_ae.encoder import MolEncoder
 from ts_vae.ts_ae.decoder import MolDecoder
-from ts_vae.ts_ae.ae import TS_AE, train
+from ts_vae.ts_ae.ae import TS_AE, train, train_on_ts
 
 # experiment
 from experiments.exp_utils import ExperimentLog
@@ -72,7 +72,8 @@ def tsi_main(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 10, tr
 def tsi(experiment_params, model_params, loaders):
     
     # get params out
-    num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts = experiment_params
+    # num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts = experiment_params
+    num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, _ = experiment_params
     ts_ae, ts_opt = model_params
     train_loader, test_loader = loaders
 
@@ -81,8 +82,8 @@ def tsi(experiment_params, model_params, loaders):
     test_log = TSI_ExpLog(*experiment_params)
 
     for epoch in range(1, epochs + 1):
-        
-        train_loss, train_epoch_stats, train_epoch_res = train(ts_ae, ts_opt, train_loader, False, train_on_ts)
+        # train_loss, train_epoch_stats, train_epoch_res = train(ts_ae, ts_opt, train_loader, False, train_on_ts)
+        train_loss, train_epoch_stats, train_epoch_res = train_on_ts(ts_ae, ts_opt, train_loader, False)
         train_log.add_epoch(train_epoch_stats)
         print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
         
@@ -90,7 +91,8 @@ def tsi(experiment_params, model_params, loaders):
             train_log.add_epoch_result(train_epoch_res)
         
         if epoch % test_interval == 0:
-            test_loss, test_epoch_stats, test_epoch_res = train(ts_ae, ts_opt, test_loader, True, train_on_ts)
+            # test_loss, test_epoch_stats, test_epoch_res = train(ts_ae, ts_opt, test_loader, True, train_on_ts)
+            test_loss, test_epoch_stats, test_epoch_res = train_on_ts(ts_ae, ts_opt, test_loader, True)
             test_log.add_epoch(test_epoch_stats)
             test_log.add_epoch_result(test_epoch_res)
             print(f"===== Testing epoch {epoch:03d} complete with loss: {test_loss:.4f} ====")
