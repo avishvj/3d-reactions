@@ -1,6 +1,14 @@
 # 3d-reactions
 Repo for my master's thesis.
 
+Clone the current repo
+`git clone https://github.com/avishvj/3d-reactions`
+`cd 3d-reactions`
+
+Install and activate the conda environment:
+`conda env create -f 3d-rdkit.yml`
+`conda activate 3d-rdkit`
+
 To be completed later. Include:
 - Versions for: Python, Conda, PyT + PyTG, Windows
 - Install .yml file
