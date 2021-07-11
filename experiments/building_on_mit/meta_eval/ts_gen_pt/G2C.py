@@ -61,27 +61,30 @@ class ReconstructLayer:
         pass
 
     def dist_nlsq(self, D, W, mask):
-        # i.e. forward
+        # i.e. make this function 'forward' after
         
+        # sim constants
         T = 100
-        eps = 0.1
-        alpha = 5.0
-        alpha_base = 0.1
+        max_dims = 21
+        coord_dims = 3
 
         # init
         B = self.dist_to_gram(D)
-        x_init = self.low_rank_approx_power(B)
-
-        # prepare simulation
-        max_dims = 21
-        x_init += torch.randn(D.shape[0], max_dims, 3) # num_ds, max_node_fs, coord_dims
-        state_init = [0, x_init]
+        x = self.low_rank_approx_power(B)
+        x += torch.randn(D.shape[0], max_dims, coord_dims) # num_ds, max_node_fs, coord_dims
 
         # opt loop
+        t = 0
         while t < T:
-            pass
+            # t -> t+1, x_i -> x_{i+1}
+            t, x = self.step_func(t, x, T)
         
-        return
+        return x
+
+        tf.while_loop(
+    cond, body, loop_vars, shape_invariants=None, parallel_iterations=10,
+    back_prop=True, swap_memory=False, maximum_iterations=None, name=None
+)
     
     def dist_to_gram(self, D):
         # convert dist matrix to gram matrix
@@ -115,29 +118,44 @@ class ReconstructLayer:
         X = torch.cat(u_set, 2)
         return X
 
+    def step_func(self, t, x_t, T):
+        # constants
+        tsg_eps1 = 0.1
+        tsg_eps2 = 1e-3
+        alpha = 5.0
+        alpha_base = 0.1
 
-        pass
-    
-
-    def grad_func(self, X):
-        D_X = self.distances(X)
-        
-        
-        pass
-
-    def step_func(self, t, x_t):
-
+        # init g and dx
         g = self.grad_func(x_t)
+        dx = - tsg_eps1 * g
 
+        # speed clipping (how fast in Angstroms)
+        speed = torch.sqrt(torch.sum(torch.square(dx), 2), + tsg_eps2)
 
+        # alpha sets max speed (soft trust region)
+        alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
+        scale = alpha_t * torch.tanh(speed / alpha_t) / speed
+        dx *= scale
 
-        pass
+        x_new = x_t + dx
+        return t+1, x_new
+    
+    def grad_func(self, D, W, X):
+        # dist -> energy -> grad
+        D_X = self.get_euc_dist(X)
+        U = torch.sum(W * torch.square(D - D_X))
+        g = torch.autograd.grad(U, X)
+        return g
+
+    def get_euc_dist(self, X):
+        # get euclidean distances
+        tsg_eps = 1e-2
+        D_sq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
+        D = torch.sqrt(torch.unsqueeze(D_sq, 3) + tsg_eps) # why unsqueeze 3?
+        return D
 
     def rmsd():
         pass
 
     def clip_gradients(self):
-        pass
-
-    def distances(self):
         pass
