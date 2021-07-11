@@ -6,8 +6,6 @@ from .GNN import GNN
 
 # pytorch port of MIT ts_gen: https://github.com/PattanaikL/ts_gen
 
-# other notes: adam opt
-
 class G2C:
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_epochs = 3, device = 'cpu'):
@@ -39,8 +37,10 @@ class G2C:
 
         # weights prediction
 
-        # reconstruct: minimise objective with unrolled gradient descent
-        # rmsd loss
+        # reconstruct: 
+        #   - minimise objective with unrolled gradient descent
+        #   - rmsd loss
+        #   - optimise with adam + clipped gradients
 
         pass
 
@@ -57,12 +57,13 @@ class ReconstructLayer:
     def __init__(self):
         pass
 
-    def dither(self):
+    def forward(self):
+        # dist_nlsq
+        # loss i.e. rmsd
+        # optimise i.e. adam + clip grad
         pass
 
     def dist_nlsq(self, D, W, mask):
-        # i.e. make this function 'forward' after
-        
         # sim constants
         T = 100
         max_dims = 21
@@ -80,24 +81,15 @@ class ReconstructLayer:
             t, x = self.step_func(t, x, T)
         
         return x
-
-        tf.while_loop(
-    cond, body, loop_vars, shape_invariants=None, parallel_iterations=10,
-    back_prop=True, swap_memory=False, maximum_iterations=None, name=None
-)
     
     def dist_to_gram(self, D):
-        # convert dist matrix to gram matrix
-        # each elem of D is real so gram matrix is (D^T)D
-        # how to deal with batches? should be fine in big adj right?
-        # normalise needed?
+        # each elem of D is real so gram matrix is (D^T)D. normalise?
         return torch.matmul(D.t(), D)
 
     def low_rank_approx_power(self, A, k = 3, num_steps = 10):
-
         A_lr = A
-        u_set = []
-        
+        u_set = []        
+
         for _ in range(k):
 
             # init eigenvector
@@ -105,7 +97,7 @@ class ReconstructLayer:
             # not sure if same as tf.rand_normal()
 
             # power iteration
-            for j in range(num_steps):
+            for _ in range(num_steps):
                 u = F.normalize(u, dim = 1, p = 2, eps = 1e-3) # 1 for row, 2 for l2 norm
                 u = torch.matmul(A_lr, u)
             
