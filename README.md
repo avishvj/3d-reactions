@@ -11,6 +11,7 @@ Install and activate the conda environment:
 
 To be completed later. Include:
 - Versions for: Python, Conda, PyT + PyTG, Windows
+- Data included, but mention data processing
 - Install .yml file
 - Stuff to compare to existing models
 - Notebooks: mention creating ipython kernels corresponding to .yml
