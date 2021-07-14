@@ -29,14 +29,13 @@ class GNN(nn.Module):
         
     
     def forward(self, node_feats, edge_index, edge_attr, init = True):
-        
         # init hidden states of nodes and edges
         if init:
             node_out = self.node_mlp(node_feats)
             edge_out = self.edge_mlp(edge_attr)
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
-        for _ in range(self.num_epochs):
+        for _ in range(self.num_iterations):
             edge_out = self.edge_model(node_out, edge_index, edge_out)
             node_out = self.node_model(node_out, edge_index, edge_out)
 
@@ -79,6 +78,7 @@ class PairFeaturesLayer(nn.Module):
 
 
 class MLP(nn.Module):
+
     def __init__(self, in_nf, out_nf, n_layers, act = nn.ReLU()):
         # TODO: add norm layers?
         super(MLP, self).__init__()

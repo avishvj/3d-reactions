@@ -2,28 +2,29 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .GNN import GNN
+from .GNN import GNN, MLP
 
 # pytorch port of MIT ts_gen: https://github.com/PattanaikL/ts_gen
 
-class G2C:
+class G2C(nn.Module):
+    def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
+        super(G2C, self).__init__()
 
-    def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_epochs = 3, device = 'cpu'):
-
-        # don't know if needed
-        self.dims = {"nodes": in_node_nf, "edges": in_edge_nf}
-        self.hps = {"node_layers": n_layers, "node_hidden": h_nf, \
-            "edge_layers": n_layers, "edge_hidden": h_nf, "num_epochs": num_epochs}
-        
         # this is an autoencoder for coordinates basically
-        self.gnn = GNN(in_node_nf, in_edge_nf, num_epochs, node_layers = n_layers, h_node_nf = h_nf, 
+        self.gnn = GNN(in_node_nf, in_edge_nf, num_iterations, node_layers = n_layers, h_node_nf = h_nf, 
             edge_layers = n_layers, h_edge_nf = h_nf)
+        
+        # distance + weight pred layer
+        self.dw_layer = DistWeightLayer()
 
+        # may have to add params for this in constructor
         self.recon_layer = ReconstructLayer()
         
         self.to(device)
 
-    def forward(self):
+    def forward(self, node_feats, edge_index, edge_attr):
+
+        # gnn
 
         # init edge: edge mlp
         # graph pool to get embedding + store [they use sum, not mean]
@@ -42,6 +43,11 @@ class G2C:
         #   - rmsd loss
         #   - optimise with adam + clipped gradients
 
+
+        node_out, edge_out = self.gnn(node_feats, edge_index, edge_attr)
+
+
+
         pass
 
     def node_edge_model(self):
@@ -50,35 +56,52 @@ class G2C:
     def coord_model(self):
         pass
 
+
+class DistWeightLayer(nn.Module):
+    
+    def __init__(self):
+        super(DistWeightLayer, self).__init__()
+
+        # distance pred layers MLP(in_nf, out_nf, n_layers)
+        self.edge_mlp1 = MLP(in?, out?, n_layers)
+        self.edge_mlp2 = nn.Linear(out?, 2, bias = True)
+        # need to symmetrise
+
+        # dist matrix prediction
+        # enforce positivity
+        # set self-loops = 0
+        # store d as d_init
+
+        # weights
+    
+    def forward(self):
+        pass
+    
+
 class ReconstructLayer:
 
-    # need to test these work against tf functions
+    def __init__(self, max_dims = 21, coord_dims = 3, total_time = 100):
+        # simulation constants
+        self.max_dims = max_dims
+        self.coord_dims = coord_dims
+        self.total_time = total_time
 
-    def __init__(self):
+    def forward(self, D, W):
+        # dist_nlsq -> loss (i.e. rmsd) -> optimise (i.e. adam + clip grad)
+        x = self.dist_nlsq(D, W)
         pass
 
-    def forward(self):
-        # dist_nlsq
-        # loss i.e. rmsd
-        # optimise i.e. adam + clip grad
-        pass
-
-    def dist_nlsq(self, D, W, mask):
-        # sim constants
-        T = 100
-        max_dims = 21
-        coord_dims = 3
-
+    def dist_nlsq(self, D, W):
         # init
         B = self.dist_to_gram(D)
         x = self.low_rank_approx_power(B)
-        x += torch.randn(D.shape[0], max_dims, coord_dims) # num_ds, max_node_fs, coord_dims
+        x += torch.randn(D.shape[0], self.max_dims, self.coord_dims) # num_ds, max_node_fs, coord_dims
 
         # opt loop
         t = 0
-        while t < T:
+        while t < self.total_time:
             # t -> t+1, x_i -> x_{i+1}
-            t, x = self.step_func(t, x, T)
+            t, x = self.step_func(t, x, D, W)
         
         return x
     
@@ -110,15 +133,16 @@ class ReconstructLayer:
         X = torch.cat(u_set, 2)
         return X
 
-    def step_func(self, t, x_t, T):
+    def step_func(self, t, x_t, D, W):
         # constants
         tsg_eps1 = 0.1
         tsg_eps2 = 1e-3
         alpha = 5.0
         alpha_base = 0.1
+        T = self.total_time
 
         # init g and dx
-        g = self.grad_func(x_t)
+        g = self.grad_func(x_t, D, W)
         dx = - tsg_eps1 * g
 
         # speed clipping (how fast in Angstroms)
@@ -132,11 +156,11 @@ class ReconstructLayer:
         x_new = x_t + dx
         return t+1, x_new
     
-    def grad_func(self, D, W, X):
+    def grad_func(self, x_t, D, W):
         # dist -> energy -> grad
-        D_X = self.get_euc_dist(X)
-        U = torch.sum(W * torch.square(D - D_X))
-        g = torch.autograd.grad(U, X)
+        D_xt = self.get_euc_dist(x_t)
+        U = torch.sum(W * torch.square(D - D_xt))
+        g = torch.autograd.grad(U, x_t)
         return g
 
     def get_euc_dist(self, X):
@@ -146,7 +170,15 @@ class ReconstructLayer:
         D = torch.sqrt(torch.unsqueeze(D_sq, 3) + tsg_eps) # why unsqueeze 3?
         return D
 
-    def rmsd():
+    def rmsd(self, X1, X2):
+
+        # reduce same on X1 and X2
+        # times masks
+        # perturb
+        # matmul perturb
+        # svd on matmul
+        # X1 align
+        # calc rmsd
         pass
 
     def clip_gradients(self):
