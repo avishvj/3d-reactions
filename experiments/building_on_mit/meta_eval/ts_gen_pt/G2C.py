@@ -23,37 +23,51 @@ class G2C(nn.Module):
         self.to(device)
 
     def forward(self, node_feats, edge_index, edge_attr):
+        # gnn -> dw layer -> recon layer
 
-        # gnn
+        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_index, edge_attr, init = True)
+        D_init, W = self.dw_layer(gnn_edge_out)
+        X_pred = self.recon_layer(D_init, W)
+
 
         # init edge: edge mlp
         # graph pool to get embedding + store [they use sum, not mean]
         # edge out: dense layer
         # set edge
         
-        # dist matrix prediction
-        # enforce positivity
-        # set self-loops = 0
-        # store d as d_init
-
-        # weights prediction
 
         # reconstruct: 
         #   - minimise objective with unrolled gradient descent
         #   - rmsd loss
         #   - optimise with adam + clipped gradients
 
-
-        node_out, edge_out = self.gnn(node_feats, edge_index, edge_attr)
-
-
-
-        pass
+        return X_pred
 
     def node_edge_model(self):
         pass
 
     def coord_model(self):
+        pass
+
+    def train(self):
+        # TODO: move out of class
+        # run layers
+        # calc loss
+        # optimise with adam and clipped gradients
+        pass
+
+    def rmsd(self, X1, X2):
+
+        # reduce same on X1 and X2
+        # times masks
+        # perturb
+        # matmul perturb
+        # svd on matmul
+        # X1 align
+        # calc rmsd
+        pass    
+
+    def clip_gradients(self):
         pass
 
 
@@ -67,15 +81,6 @@ class DistWeightLayer(nn.Module):
         # distance pred layers MLP(in_nf, out_nf, n_layers)
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
-        # need to symmetrise
-
-        # dist matrix prediction
-
-        # enforce positivity
-        # set self-loops = 0
-        # store d as d_init
-
-        # weights
     
     def forward(self, gnn_edge_out):
 
@@ -104,9 +109,7 @@ class ReconstructLayer:
         self.total_time = total_time
 
     def forward(self, D, W):
-        # dist_nlsq -> loss (i.e. rmsd) -> optimise (i.e. adam + clip grad)
-        X = self.dist_nlsq(D, W)
-        return X
+        return self.dist_nlsq(D, W)
 
     def dist_nlsq(self, D, W):
         # init
@@ -186,17 +189,3 @@ class ReconstructLayer:
         D_sq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
         D = torch.sqrt(torch.unsqueeze(D_sq, 3) + tsg_eps) # why unsqueeze 3?
         return D
-
-    def rmsd(self, X1, X2):
-
-        # reduce same on X1 and X2
-        # times masks
-        # perturb
-        # matmul perturb
-        # svd on matmul
-        # X1 align
-        # calc rmsd
-        pass
-
-    def clip_gradients(self):
-        pass
