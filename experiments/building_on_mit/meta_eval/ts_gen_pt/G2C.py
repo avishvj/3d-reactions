@@ -59,23 +59,40 @@ class G2C(nn.Module):
 
 class DistWeightLayer(nn.Module):
     
-    def __init__(self):
+    def __init__(self, in_nf, h_nf, edge_out_nf = 2, n_layers = 1):
         super(DistWeightLayer, self).__init__()
 
+        self.edge_out_nf = edge_out_nf
+
         # distance pred layers MLP(in_nf, out_nf, n_layers)
-        self.edge_mlp1 = MLP(in?, out?, n_layers)
-        self.edge_mlp2 = nn.Linear(out?, 2, bias = True)
+        self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
+        self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
         # need to symmetrise
 
         # dist matrix prediction
+
         # enforce positivity
         # set self-loops = 0
         # store d as d_init
 
         # weights
     
-    def forward(self):
-        pass
+    def forward(self, gnn_edge_out):
+
+        edge_out = self.edge_mlp1(gnn_edge_out)
+        # squeeze edge_out along cols then rows and save as embedding, TODO: shape of output here
+        edge_out = self.edge_mlp2(edge_out)
+        edge_out = edge_out + edge_out.t() # symmetrise; last dim of edge out should be matrix of 2-tuples, no batch dim
+        
+        # some D_init init here?
+        D_init = nn.Softplus(edge_out[-1][0])
+        D_init = D_init * (1 - torch.eye(len(D_init))) # remove self loops
+        # dist_pred = D_init.unsqueeze(3) # should this be 3 here?
+
+        # weights prediction
+        W = nn.Softplus(edge_out[-1][1])
+    
+        return D_init, W # embedding
     
 
 class ReconstructLayer:
@@ -88,22 +105,22 @@ class ReconstructLayer:
 
     def forward(self, D, W):
         # dist_nlsq -> loss (i.e. rmsd) -> optimise (i.e. adam + clip grad)
-        x = self.dist_nlsq(D, W)
-        pass
+        X = self.dist_nlsq(D, W)
+        return X
 
     def dist_nlsq(self, D, W):
         # init
         B = self.dist_to_gram(D)
-        x = self.low_rank_approx_power(B)
-        x += torch.randn(D.shape[0], self.max_dims, self.coord_dims) # num_ds, max_node_fs, coord_dims
+        X = self.low_rank_approx_power(B)
+        X += torch.randn(D.shape[0], self.max_dims, self.coord_dims) # num_ds, max_node_fs, coord_dims
 
         # opt loop
         t = 0
         while t < self.total_time:
             # t -> t+1, x_i -> x_{i+1}
-            t, x = self.step_func(t, x, D, W)
+            t, X = self.step_func(t, X, D, W)
         
-        return x
+        return X
     
     def dist_to_gram(self, D):
         # each elem of D is real so gram matrix is (D^T)D. normalise?
@@ -133,7 +150,7 @@ class ReconstructLayer:
         X = torch.cat(u_set, 2)
         return X
 
-    def step_func(self, t, x_t, D, W):
+    def step_func(self, t, X_t, D, W):
         # constants
         tsg_eps1 = 0.1
         tsg_eps2 = 1e-3
@@ -142,25 +159,25 @@ class ReconstructLayer:
         T = self.total_time
 
         # init g and dx
-        g = self.grad_func(x_t, D, W)
-        dx = - tsg_eps1 * g
+        g = self.grad_func(X_t, D, W)
+        dX = - tsg_eps1 * g
 
         # speed clipping (how fast in Angstroms)
-        speed = torch.sqrt(torch.sum(torch.square(dx), 2), + tsg_eps2)
+        speed = torch.sqrt(torch.sum(torch.square(dX), 2), + tsg_eps2)
 
         # alpha sets max speed (soft trust region)
         alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
         scale = alpha_t * torch.tanh(speed / alpha_t) / speed
-        dx *= scale
+        dX *= scale
 
-        x_new = x_t + dx
-        return t+1, x_new
+        X_new = X_t + dX
+        return t+1, X_new
     
-    def grad_func(self, x_t, D, W):
+    def grad_func(self, X_t, D, W):
         # dist -> energy -> grad
-        D_xt = self.get_euc_dist(x_t)
-        U = torch.sum(W * torch.square(D - D_xt))
-        g = torch.autograd.grad(U, x_t)
+        D_Xt = self.get_euc_dist(X_t)
+        U = torch.sum(W * torch.square(D - D_Xt))
+        g = torch.autograd.grad(U, X_t)
         return g
 
     def get_euc_dist(self, X):
