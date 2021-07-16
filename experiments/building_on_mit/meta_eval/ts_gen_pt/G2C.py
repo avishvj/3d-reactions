@@ -25,26 +25,51 @@ class G2C(nn.Module):
         gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_index, edge_attr, init = True)
         D_init, W = self.dw_layer(gnn_edge_out)
         X_pred = self.recon.dist_nlsq(D_init, W)        
-        return X_pred
+        return D_init, W, X_pred
 
-    def train(self):
+    def train(self, g2c, g2c_opt, loader, test = False):
         # TODO: move out of class
-        # run layers
-        # calc loss
-        # optimise with adam and clipped gradients
+        # run model, calc loss, opt with adam and clipped grad
 
-        # ablation study
-        # 1) drop recon_layer
-        # 2) do loss with coords instead of dist matrix?
-        # 3) use recon (a) init (b) opt
-        # 4) change W used in pytorch, pull init out
-        # 5) add noise to training coords and run NLS for diff D_inits
+        total_loss = 0
+        res_dict = {'D_init': [], 'W': [], 'X_pred': []}
 
-        # notes:
-        # - is the node update doing anything? yes, it will work for multiple iterations on edge features.
-        pass
+        for batch_id, rxn_batch in enumerate(loader):
+
+            if not test:
+                g2c.train()
+                g2c_opt.zero_grad()
+            else:
+                g2c.eval()
+            
+            # init r, p, ts params
+            r_params = rxn_batch.x_r, rxn_batch.edge_index_r, rxn_batch.edge_attr_r, rxn_batch.pos_r
+            p_params = rxn_batch.x_p, rxn_batch.edge_index_p, rxn_batch.edge_attr_p, rxn_batch.pos_p
+            X_gt = rxn_batch.pos_ts
+            batch_size = len(rxn_batch.idx)
+            max_num_atoms = sum(rxn_batch.num_atoms).item() # add this in because sometimes we get hanging atoms if bonds broken
+            batch_node_vecs = rxn_batch.x_r_batch, rxn_batch.x_p_batch, rxn_batch.x_ts_batch # for recreating graphs
+
+            # run batch pass of g2c with params
+            D_init, W, X_pred = g2c()
+
+            batch_loss = g2c.rmsd(X_pred, X_gt)
+            total_loss += batch_loss
+
+            if not test:
+                batch_loss.backward()
+                g2c_opt.step()
+            
+            # log batch results
+            res_dict['D_init'].append(D_init)
+            res_dict['W'].append(W)
+            res_dict['X_pred'].append(X_pred)
+
+        return total_loss/ batch_id, res_dict
 
     def rmsd(self, X1, X2):
+
+        
 
         # reduce same on X1 and X2
         # times masks
