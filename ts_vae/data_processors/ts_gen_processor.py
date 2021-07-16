@@ -4,67 +4,27 @@ from torch_geometric.data import InMemoryDataset, Data, DataLoader
 from rdkit import Chem
 from tqdm import tqdm
 
-class ReactionTriple(Data):
+class TSGenGraph(Data):
     # seeing if this works
 
-    def __init__(self, r = None, ts = None, p = None):
-        super(ReactionTriple, self).__init__()
-
-        # initial checks
-        if r and ts and p:
-            assert r.idx == ts.idx == p.idx, \
-                "The IDs of each mol don't match. Are you sure your data processing is correct?"
-            assert len(r.z) == len(ts.z) == len(p.z), \
-                "The mols have different number of atoms."
-            assert r.x.size(1) == ts.x.size(1) == p.x.size(1), \
-                "You don't have the same number of atom features for each mol."
-            assert r.edge_attr.size(1) == ts.edge_attr.size(1) == p.edge_attr.size(1), \
-                "You don't have the same number of bond features for each mol."
-            self.idx = r.idx
-            self.num_atoms = len(r.z)
-            self.num_atom_fs = r.x.size(1)
-            self.num_bond_fs = r.edge_attr.size(1)
-
-            # reactant
-            self.edge_attr_r = r.edge_attr
-            self.edge_index_r = r.edge_index
-            self.pos_r = r.pos
-            self.x_r = r.x
-
-            # ts
-            self.edge_attr_ts = ts.edge_attr
-            self.edge_index_ts = ts.edge_index
-            self.pos_ts = ts.pos
-            self.x_ts = ts.x
-
-            # product
-            self.edge_attr_p = p.edge_attr
-            self.edge_index_p = p.edge_index
-            self.pos_p = p.pos
-            self.x_p = p.x
-        else:
-            NameError("Reactant, TS, or Product not defined for this reaction.")
+    def __init__(self, x = None, z = None, pos = None, edge_attr = None, idx = None):
+        super(TSGenGraph, self).__init__(x = x, edge_attr = edge_attr, y = z, pos = pos)
+        self.idx = idx
 
     def __inc__(self, key, value):
-        if key == 'edge_index_r' or key == 'edge_attr_r':
-            return self.x_r.size(0)
-        if key == 'edge_index_ts' or key == 'edge_attr_ts':
-            return self.x_ts.size(0)
-        if key == 'edge_index_p' or key == 'edge_attr_p':
-            return self.x_p.size(0)
+        if key == 'edge_attr':
+            return self.x.size(0)
         else:
             return super().__inc__(key, value)
     
     def __cat_dim__(self, key, item):
         # NOTE: automatically figures out .x and .pos
-        if key == 'edge_attr_r' or key == 'edge_attr_ts' or key == 'edge_attr_p':
+        if key == 'edge_attr':
             return 0
-        if key == 'edge_index_r' or key == 'edge_index_ts' or key == 'edge_index_p':
-            return 1
         else:
             return super().__cat_dim__(key, item)
 
-class ReactionDataset(InMemoryDataset):
+class TSGenDataset(InMemoryDataset):
     """Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product)."""
 
     # constants
@@ -74,7 +34,7 @@ class ReactionDataset(InMemoryDataset):
     TEMP_MOLS_LIMIT = 8000
 
     def __init__(self, root_folder, transform = None, pre_transform = None):
-        super(ReactionDataset, self).__init__(root_folder, transform, pre_transform)
+        super(TSGenDataset, self).__init__(root_folder, transform, pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
         
     @property
@@ -95,8 +55,8 @@ class ReactionDataset(InMemoryDataset):
         """Process reactants, TSs, and products as reactions list."""
 
         # reactants
-        r_train = Chem.SDMolSupplier('data/raw/train_reactants.sdf', removeHs = False, sanitize = False)
-        r_test = Chem.SDMolSupplier('data/raw/test_reactants.sdf', removeHs = False, sanitize = False)
+        r_train = Chem.SDMolSupplier(self.root + '/raw/train_reactants.sdf', removeHs = False, sanitize = False)
+        r_test = Chem.SDMolSupplier(self.root + '/raw/test_reactants.sdf', removeHs = False, sanitize = False)
         rs = []
         for mol in r_train:
             rs.append(mol)
@@ -104,8 +64,8 @@ class ReactionDataset(InMemoryDataset):
             rs.append(mol)
         
         # transition states
-        ts_train = Chem.SDMolSupplier('data/raw/train_ts.sdf', removeHs = False, sanitize = False)
-        ts_test = Chem.SDMolSupplier('data/raw/test_ts.sdf', removeHs = False, sanitize = False)
+        ts_train = Chem.SDMolSupplier(self.root + '/raw/train_ts.sdf', removeHs = False, sanitize = False)
+        ts_test = Chem.SDMolSupplier(self.root + '/raw/test_ts.sdf', removeHs = False, sanitize = False)
         tss = []
         for mol in ts_train:
             tss.append(mol)
@@ -113,8 +73,8 @@ class ReactionDataset(InMemoryDataset):
             tss.append(mol)
         
         # products
-        p_train = Chem.SDMolSupplier('data/raw/train_products.sdf', removeHs = False, sanitize = False)
-        p_test = Chem.SDMolSupplier('data/raw/test_products.sdf', removeHs = False, sanitize = False)
+        p_train = Chem.SDMolSupplier(self.root + '/raw/train_products.sdf', removeHs = False, sanitize = False)
+        p_test = Chem.SDMolSupplier(self.root + '/raw/test_products.sdf', removeHs = False, sanitize = False)
         ps = []
         for mol in p_train:
             ps.append(mol)
@@ -177,7 +137,7 @@ class ReactionDataset(InMemoryDataset):
             atomic_ns = torch.tensor(atomic_ns, dtype = torch.long)
             edge_attr = torch.tensor([bonded, aromatic, rbf], dtype = torch.long)
 
-            data = Data(x = node_feats, z = atomic_ns, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
+            data = TSGenGraph(x = node_feats, z = atomic_ns, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
             data_list.append(data) 
 
         return data_list
