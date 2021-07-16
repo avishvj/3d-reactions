@@ -10,50 +10,38 @@ class G2C(nn.Module):
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
         super(G2C, self).__init__()
 
-        # this is an autoencoder for coordinates basically
-        self.gnn = GNN(in_node_nf, in_edge_nf, num_iterations, node_layers = n_layers, h_node_nf = h_nf, 
-            edge_layers = n_layers, h_edge_nf = h_nf)
-        
-        # distance + weight pred layer
-        self.dw_layer = DistWeightLayer()
+        # dims to save
+        h_edge_nf = h_nf
 
-        # may have to add params for this in constructor
-        self.recon_layer = ReconstructLayer()
+        # nn processing
+        self.gnn = GNN(in_node_nf, in_edge_nf, num_iterations, node_layers = n_layers, h_node_nf = h_nf, 
+            edge_layers = n_layers, h_edge_nf = h_edge_nf)
+        self.dw_layer = DistWeightLayer(in_nf = h_edge_nf, h_nf = h_nf)
+        self.recon = ReconstructCoords(max_dims = 21, coord_dim = 3, total_time = 100)
         
         self.to(device)
 
     def forward(self, node_feats, edge_index, edge_attr):
-        # gnn -> dw layer -> recon layer
-
         gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_index, edge_attr, init = True)
         D_init, W = self.dw_layer(gnn_edge_out)
-        X_pred = self.recon_layer(D_init, W)
-
-
-        # init edge: edge mlp
-        # graph pool to get embedding + store [they use sum, not mean]
-        # edge out: dense layer
-        # set edge
-        
-
-        # reconstruct: 
-        #   - minimise objective with unrolled gradient descent
-        #   - rmsd loss
-        #   - optimise with adam + clipped gradients
-
+        X_pred = self.recon.dist_nlsq(D_init, W)        
         return X_pred
-
-    def node_edge_model(self):
-        pass
-
-    def coord_model(self):
-        pass
 
     def train(self):
         # TODO: move out of class
         # run layers
         # calc loss
         # optimise with adam and clipped gradients
+
+        # ablation study
+        # 1) drop recon_layer
+        # 2) do loss with coords instead of dist matrix?
+        # 3) use recon (a) init (b) opt
+        # 4) change W used in pytorch, pull init out
+        # 5) add noise to training coords and run NLS for diff D_inits
+
+        # notes:
+        # - is the node update doing anything? yes, it will work for multiple iterations on edge features.
         pass
 
     def rmsd(self, X1, X2):
@@ -100,16 +88,13 @@ class DistWeightLayer(nn.Module):
         return D_init, W # embedding
     
 
-class ReconstructLayer:
+class ReconstructCoords:
 
     def __init__(self, max_dims = 21, coord_dims = 3, total_time = 100):
         # simulation constants
         self.max_dims = max_dims
         self.coord_dims = coord_dims
         self.total_time = total_time
-
-    def forward(self, D, W):
-        return self.dist_nlsq(D, W)
 
     def dist_nlsq(self, D, W):
         # init
