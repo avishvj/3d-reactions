@@ -1,32 +1,29 @@
-# UQ
-# weights
-
-# ablation study: to do in meta_eval!
-# 1) drop recon_layer
-# 2) do loss with coords instead of dist matrix?
-# 3) use recon (a) init (b) opt
-# 4) change W used in pytorch, pull init out
-# 5) add noise to training coords and run NLS for diff D_inits
-
-
-
-# data processing
-from ts_vae.data_processors.ts_gen_processor import TSGenDataset
-from torch_geometric.data import DataLoader
-
-# torch, torch geometric
 import torch
 import torch.nn as nn
-
-# model
-from experiments.building_on_mit.meta_eval.ts_gen_pt.G2C import G2C, train
-# TODO: get train
-
-# experiment
+from torch_geometric.data import DataLoader
+from ts_vae.data_processors.ts_gen_processor import TSGenDataset
+from experiments.building_on_mit.meta_eval.ts_gen_pt.G2C import G2C, train_g2c
 from experiments.exp_utils import ExperimentLog
 import numpy as np
 
+# ablation study, UQ i.e. stability testing, weights
+
+class TSGen_ExpLog(ExperimentLog):
+    # tsgen: save D_init, W, X, loss for each batch in epoch
+    def __init__(self, num_rxns, tt_split, batch_size, epochs, test_interval):
+        super(TSGen_ExpLog, self).__init__(num_rxns, tt_split, batch_size, epochs, test_interval)
+        self.epoch_ae_results = []
+    
+    def add_epoch_result(self, res):
+        self.epoch_ae_results.append(res)
+
 def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 5):
+    # ablation study:
+    # 1) drop recon_layer
+    # 2) do loss with coords instead of dist matrix?
+    # 3) use recon (a) init (b) opt
+    # 4) change W used in pytorch, pull init out
+    # 5) add noise to training coords and run NLS for diff D_inits
 
     torch.set_printoptions(precision = 3, sci_mode = False)
 
@@ -38,15 +35,13 @@ def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interv
     train_loader = DataLoader(rxns[: num_train], batch_size = batch_size)
     test_loader = DataLoader(rxns[num_train: ], batch_size = batch_size)
 
-    # model params
-
     # model and opt
-    g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3)
+    in_node_nf, in_edge_nf = train_loader.dataset[0].x.size(1), train_loader.dataset[0].edge_attr.size(1)
+    h_nf, n_layers, num_iterations = 100, 2, 3
+    g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
     g2c_opt = torch.optim.Adam(g2c.parameters(), lr = 1e-3)
 
-    # ablation study
-
-    experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches)
+    experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval)
     model_params = (g2c, g2c_opt)
     loaders = (train_loader, test_loader)
 
@@ -56,8 +51,30 @@ def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interv
 
     return train_log, test_log
 
+
 def ablation(experiment_params, model_params, loaders):
-    pass
+
+    num_rxns, tt_split, batch_size, epochs, test_interval = experiment_params
+    g2c, g2c_opt = model_params
+    train_loader, test_loader = loaders
+
+    # log training and testing
+    train_log = TSGen_ExpLog(*experiment_params)
+    test_log = TSGen_ExpLog(*experiment_params)
+
+    for epoch in range(1, epochs + 1):
+        
+        train_loss, train_epoch_res = train_g2c(g2c, g2c_opt, train_loader, test = False)
+        if epoch == epochs: # only add final epoch res
+            train_log.add_epoch_result(train_epoch_res)
+        print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
+
+        if epoch % test_interval == 0:
+            test_loss, test_epoch_res = train_g2c(g2c, g2c_opt, test_loader, test = True)
+            test_log.add_epoch_result(test_epoch_res)
+            print(f"===== Testing epoch {epoch:03d} complete with loss: {test_loss:.4f} ====")
+
+    return train_log, test_log
 
 
 

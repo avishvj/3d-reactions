@@ -160,7 +160,7 @@ class ReconstructCoords:
 
 ### train and test functions
 
-def train(g2c, g2c_opt, loader, test = False):
+def train_g2c(g2c, g2c_opt, loader, test = False):
         # run model, calc loss, opt with adam and clipped grad
 
         total_loss = 0
@@ -194,4 +194,4 @@ def train(g2c, g2c_opt, loader, test = False):
             res_dict['W'].append(W)
             res_dict['X_pred'].append(X_pred)
 
-        return total_loss/ batch_id, res_dict
+        return total_loss / batch_id, res_dict
