@@ -37,7 +37,7 @@ class GNN(nn.Module):
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.num_iterations):
             edge_out = self.edge_model(node_out, edge_index, edge_out)
-            node_out = self.node_model(node_out, edge_index, edge_out)
+            node_out = self.node_model(node_out, edge_out)
 
         return node_out, edge_out
 
@@ -46,7 +46,7 @@ class GNN(nn.Module):
         dE = self.de_mlp(f)
         return edge_attr + dE
 
-    def node_model(self, node_feats, edge_index, edge_attr):
+    def node_model(self, node_feats, edge_attr):
         dV = self.dv_mlp1(edge_attr)
         dV = torch.sum(dV, dim = 2) # TODO: figure out dim and change in mlp2
         dV = self.dv_mlp2(dV)
@@ -54,6 +54,7 @@ class GNN(nn.Module):
 
 
 class PairFeaturesLayer(nn.Module):
+    # where is edge_index used? 
 
     def __init__(self, node_nf, edge_nf, out_nf, act = nn.ReLU()):
         super(PairFeaturesLayer, self).__init__()
@@ -78,9 +79,9 @@ class PairFeaturesLayer(nn.Module):
 
 
 class MLP(nn.Module):
+    # TODO: add norm layers?
 
     def __init__(self, in_nf, out_nf, n_layers, act = nn.ReLU()):
-        # TODO: add norm layers?
         super(MLP, self).__init__()
         h_nf = in_nf
 
