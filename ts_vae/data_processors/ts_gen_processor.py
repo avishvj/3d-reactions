@@ -12,7 +12,7 @@ class TSGenGraph(Data):
         self.idx = idx
 
     def __inc__(self, key, value):
-        if key == 'edge_attr':
+        if key == 'edge_attr' or key == 'edge_index':
             return self.x.size(0)
         else:
             return super().__inc__(key, value)
@@ -21,8 +21,10 @@ class TSGenGraph(Data):
         # NOTE: automatically figures out .x and .pos
         if key == 'edge_attr':
             return 0
+        elif key == 'edge_index':
+            return 1
         else:
-            return super().__cat_dim__(key, item)
+            return super().__cat_dim__(key, item) 
 
 class TSGenDataset(InMemoryDataset):
     """Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product)."""
@@ -31,7 +33,7 @@ class TSGenDataset(InMemoryDataset):
     MAX_D = 10.
     COORD_DIM = 3
     ELEM_TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
-    TEMP_MOLS_LIMIT = 8000
+#    TEMP_MOLS_LIMIT = 10
 
     def __init__(self, root_folder, transform = None, pre_transform = None):
         super(TSGenDataset, self).__init__(root_folder, transform, pre_transform)
@@ -94,6 +96,10 @@ class TSGenDataset(InMemoryDataset):
         data_list = []
         
         for rxn_id, rxn in enumerate(tqdm(geometries)):
+
+#            if rxn_id == self.TEMP_MOLS_LIMIT:
+#                break
+
             r, ts, p = rxn
             num_atoms = r.GetNumAtoms()
 
@@ -133,9 +139,9 @@ class TSGenDataset(InMemoryDataset):
                     # 3d rbf
                     rbf.append(D_3D_rbf[i][j])
             
-            node_feats = torch.tensor([type_ids, atomic_ns], dtype = torch.float)
+            node_feats = torch.tensor([type_ids, atomic_ns], dtype = torch.float).t().contiguous()
             atomic_ns = torch.tensor(atomic_ns, dtype = torch.long)
-            edge_attr = torch.tensor([bonded, aromatic, rbf], dtype = torch.long)
+            edge_attr = torch.tensor([bonded, aromatic, rbf], dtype = torch.long).t().contiguous()
 
             data = TSGenGraph(x = node_feats, z = atomic_ns, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
             data_list.append(data) 
