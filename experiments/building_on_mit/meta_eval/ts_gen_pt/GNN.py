@@ -28,7 +28,7 @@ class GNN(nn.Module):
         self.dv_mlp2 = MLP(h_node_nf, h_node_nf, n_node_layers)
         
     
-    def forward(self, node_feats, edge_index, edge_attr, init = True):
+    def forward(self, node_feats, edge_attr, init = True):
         # init hidden states of nodes and edges
         if init:
             node_out = self.node_mlp(node_feats)
@@ -36,13 +36,13 @@ class GNN(nn.Module):
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.num_iterations):
-            edge_out = self.edge_model(node_out, edge_index, edge_out)
+            edge_out = self.edge_model(node_out, edge_out)
             node_out = self.node_model(node_out, edge_out)
 
         return node_out, edge_out
 
-    def edge_model(self, node_feats, edge_index, edge_attr):
-        f = self.pf_layer(node_feats, edge_index, edge_attr)
+    def edge_model(self, node_feats, edge_attr):
+        f = self.pf_layer(node_feats, edge_attr)
         dE = self.de_mlp(f)
         return edge_attr + dE
 
@@ -54,7 +54,6 @@ class GNN(nn.Module):
 
 
 class PairFeaturesLayer(nn.Module):
-    # where is edge_index used? 
 
     def __init__(self, node_nf, edge_nf, out_nf, act = nn.ReLU()):
         super(PairFeaturesLayer, self).__init__()
@@ -64,16 +63,14 @@ class PairFeaturesLayer(nn.Module):
         self.node_j_layer = nn.Linear(node_nf, out_nf, bias = False) # second dim unsqueeze?
         self.act = act
 
-    def forward(self, node_feats, edge_index, edge_attr):
+    def forward(self, node_feats, edge_attr):
         # lucky uses tf.expand_dims (like unsqueeze) here because of diff node and edge dims
         # not sure if required here
-
-        node_is, node_js = edge_index
-        node_is_fs, node_js_fs = node_feats[node_is], node_feats[node_js]
+        # NOTE: don't need to get edge_index of features here as assume fully connected graph
 
         f_ij = self.edge_ij_layer(edge_attr)
-        f_i = self.node_i_layer(node_is_fs)
-        f_j = self.node_j_layer(node_js_fs)
+        f_i = self.node_i_layer(node_feats)
+        f_j = self.node_j_layer(node_feats)
 
         return self.act(f_ij + f_i + f_j)
 

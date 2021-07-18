@@ -21,8 +21,8 @@ class G2C(nn.Module):
         
         self.to(device)
 
-    def forward(self, node_feats, edge_index, edge_attr):
-        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_index, edge_attr, init = True)
+    def forward(self, node_feats, edge_attr):
+        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, init = True)
         D_init, W = self.dw_layer(gnn_edge_out)
         X_pred = self.recon.dist_nlsq(D_init, W)        
         return D_init, W, X_pred
@@ -67,7 +67,7 @@ class DistWeightLayer(nn.Module):
         # weights prediction
         W = nn.Softplus(edge_out[-1][1])
     
-        return D_init, W # embedding
+        return D_init, W #, embedding
     
 
 class ReconstructCoords:
@@ -180,7 +180,7 @@ def train_g2c(g2c, g2c_opt, loader, test = False):
             batch_vecs = rxn_batch.batch
 
             # run batch pass of g2c with params
-            D_init, W, X_pred = g2c()
+            D_init, W, X_pred = g2c(node_feats, edge_attr)
 
             batch_loss = g2c.rmsd(X_pred, X_gt)
             total_loss += batch_loss
