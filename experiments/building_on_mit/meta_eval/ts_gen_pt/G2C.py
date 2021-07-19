@@ -68,18 +68,19 @@ class DistWeightLayer(nn.Module):
 
         edge_out = self.edge_mlp1(gnn_edge_out)
         emb = torch.sum(edge_out, dim = (0, 1)).unsqueeze(0)
-        print("dwlayer fwd ", edge_out.shape, emb.shape)
-        # squeeze edge_out along cols then rows and save as embedding, TODO: shape of output here
-        edge_out = self.edge_mlp2(edge_out)
-        edge_out = edge_out + edge_out.t() # symmetrise; last dim of edge out should be matrix of 2-tuples, no batch dim
-        
-        # some D_init init here?
-        D_init = nn.Softplus(edge_out[-1][0])
-        D_init = D_init * (1 - torch.eye(len(D_init))) # remove self loops
-        # dist_pred = D_init.unsqueeze(3) # should this be 3 here?
+        edge_out = self.edge_mlp2(edge_out) # shape: num_atoms^2 * 2
+        # TODO: symmetrise? but shape is irregular? do i need to make num_atoms x num_atoms then add?
 
-        # weights prediction
-        W = nn.Softplus(edge_out[-1][1])
+        # distance weight predictions
+        dist_weight_pred = nn.Softplus()(edge_out.t())
+        D_init_vec = dist_weight_pred[0] # NOTE: ignore D_init init here
+        W_vec = dist_weight_pred[1]
+
+        # reshaping to matrices
+        num_atoms = int(np.sqrt(len(D_init_vec)))
+        D_init = D_init_vec.view((num_atoms, num_atoms))
+        D_init = D_init * (1 - torch.eye(num_atoms)) # remove self loops
+        W = W_vec.view((num_atoms, num_atoms))
     
         return D_init, W, emb
     
