@@ -24,8 +24,8 @@ class GNN(nn.Module):
         self.de_mlp = MLP(h_nf, h_nf, n_edge_layers) 
 
         # node layers
-        self.dv_mlp1 = MLP(h_edge_nf, h_node_nf, n_node_layers)
-        self.dv_mlp2 = MLP(h_node_nf, h_node_nf, n_node_layers)
+        self.dv_mlp1 = MLP(h_nf, h_nf, n_node_layers)
+        self.dv_mlp2 = MLP(h_nf, h_nf, n_node_layers)
         
     
     def forward(self, node_feats, edge_attr, init = True):
@@ -34,8 +34,6 @@ class GNN(nn.Module):
             node_feats = self.node_mlp(node_feats)
             edge_attr = self.edge_mlp(edge_attr)
             # TODO: if not init, then need different dimensions in following mlps here!
-        
-        print(f"gnn fwd: nf {node_feats.shape}, ea {edge_attr.shape}")
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.num_iterations):
@@ -50,8 +48,7 @@ class GNN(nn.Module):
         return edge_attr + dE
 
     def node_model(self, node_feats, edge_attr):
-        dV = self.dv_mlp1(edge_attr)
-        dV = torch.sum(dV, dim = 2) # TODO: figure out dim and change in mlp2
+        dV = self.dv_mlp1(node_feats) # TODO: they use edge_attr here but causes dim issues
         dV = self.dv_mlp2(dV)
         return node_feats + dV
 
@@ -68,11 +65,7 @@ class PairFeaturesLayer(nn.Module):
         self.act = act
 
     def forward(self, node_feats, edge_attr):
-        # lucky uses tf.expand_dims (like unsqueeze) here because of diff node and edge dims
-        # not sure if required here
         # NOTE: don't need to get edge_index of features here as assume fully connected graph
-
-        print(f"pf layer fwd: nf {node_feats.shape}, ea {edge_attr.shape}")
 
         f_ij = self.edge_ij_layer(edge_attr)
         f_i = self.node_i_layer(node_feats)
