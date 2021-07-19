@@ -97,7 +97,7 @@ class ReconstructCoords:
         # init
         B = self.dist_to_gram(D)
         X = self.low_rank_approx_power(B)
-        X += torch.randn(D.shape[0], D.shape[1], self.coord_dims) # num_ds, max_node_fs, coord_dims
+        X += torch.randn(D.shape[0], D.shape[1], self.coord_dims) # N x N x coord_dims
 
         # opt loop
         t = 0
@@ -109,9 +109,9 @@ class ReconstructCoords:
     
     def dist_to_gram(self, D):
         N = len(D)
-        D_row = torch.sum(D, 0) / N
-        D_col = torch.sum(D, 1) / N
-        D_mean = torch.sum(D, (0, 1)) / N**2
+        D_row = torch.sum(D, 0, keepdim = True) / N
+        D_col = torch.sum(D, 1, keepdim = True) / N
+        D_mean = torch.sum(D, (0, 1), keepdim = True) / N**2
         B = - 0.5 * (D - D_row - D_col + D_mean)
         return B
 
@@ -147,11 +147,11 @@ class ReconstructCoords:
         T = self.total_time
 
         # init g and dx
-        g = self.grad_func(X_t, D, W)
+        g = self.grad_func(X_t, D, W)[0] # weirdly returns tuple of len 1
         dX = - tsg_eps1 * g
 
         # speed clipping (how fast in Angstroms)
-        speed = torch.sqrt(torch.sum(torch.square(dX), 2), + tsg_eps2)
+        speed = torch.sqrt(torch.sum(torch.square(dX), 2, keepdim = True) + tsg_eps2)
 
         # alpha sets max speed (soft trust region)
         alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
@@ -169,10 +169,10 @@ class ReconstructCoords:
         return g
 
     def get_euc_dist(self, X):
-        # get euclidean distances
+        # NOTE: to be redone as X is NxNx3 right now
         tsg_eps = 1e-2
-        D_sq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
-        D = torch.sqrt(torch.unsqueeze(D_sq, 3) + tsg_eps) # why unsqueeze 3?
+        # D_sq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
+        D = torch.sum(X, 2) + tsg_eps 
         return D
 
 
@@ -200,6 +200,7 @@ def train_g2c(g2c, g2c_opt, loader, test = False):
 
             # run batch pass of g2c with params
             D_init, W, emb, X_pred = g2c(node_feats, edge_attr)
+            print(X_pred.shape, X_gt.shape)
 
             batch_loss = g2c.rmsd(X_pred, X_gt)
             total_loss += batch_loss
