@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 from .GNN import GNN, MLP
 
@@ -14,10 +15,10 @@ class G2C(nn.Module):
         h_edge_nf = h_nf
 
         # nn processing
-        self.gnn = GNN(in_node_nf, in_edge_nf, num_iterations, node_layers = n_layers, h_node_nf = h_nf, 
-            edge_layers = n_layers, h_edge_nf = h_edge_nf)
+        self.gnn = GNN(in_node_nf, in_edge_nf, num_iterations, n_node_layers = n_layers, h_node_nf = h_nf, 
+            n_edge_layers = n_layers, h_edge_nf = h_edge_nf)
         self.dw_layer = DistWeightLayer(in_nf = h_edge_nf, h_nf = h_nf)
-        self.recon = ReconstructCoords(max_dims = 21, coord_dim = 3, total_time = 100)
+        self.recon = ReconstructCoords(max_dims = 21, coord_dims = 3, total_time = 100)
         
         self.to(device)
 
@@ -27,7 +28,13 @@ class G2C(nn.Module):
         X_pred = self.recon.dist_nlsq(D_init, W)        
         return D_init, W, X_pred
 
-    def rmsd(self, X1, X2):
+    def rmsd(self, X_pred, X_gt):
+        # from https://github.com/charnley/rmsd
+        diff = np.array(X_pred) - np.array(X_gt)
+        num_atoms = len(X_pred)
+        return np.sqrt((diff * diff).sum() / num_atoms)
+
+    def ts_gen_rmsd(self, X_pred, X_gt):
         # reduce same on X1 and X2
         # times masks
         # perturb
@@ -35,6 +42,13 @@ class G2C(nn.Module):
         # svd on matmul
         # X1 align
         # calc rmsd
+
+        eps = 1e-2
+        X_pred_perturb = X_pred + eps * torch.randn(X_pred.shape)
+        X_gt_perturb = X_gt + eps * torch.randn(X_gt.shape)
+        A= torch.matmul(X_gt_perturb, X_pred_perturb)
+        U, S, V_H = torch.linalg.svd(A, full_matrices = True) # are these same as ts_gen?
+
         pass    
 
     def clip_gradients(self):
@@ -176,6 +190,7 @@ def train_g2c(g2c, g2c_opt, loader, test = False):
             
             # batch
             node_feats, edge_attr = rxn_batch.x, rxn_batch.edge_attr
+            print(f"train node_fs {node_feats.shape}, edge_attr {edge_attr.shape}")
             X_gt = rxn_batch.pos
             batch_vecs = rxn_batch.batch
 

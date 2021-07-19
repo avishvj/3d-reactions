@@ -19,9 +19,9 @@ class GNN(nn.Module):
         self.edge_mlp = MLP(in_edge_nf, h_edge_nf, n_edge_layers)
         
         # edge layers 
-        out_edge_nf = h_node_nf
-        self.pf_layer = PairFeaturesLayer(in_node_nf, in_edge_nf, out_edge_nf)
-        self.de_mlp = MLP(out_edge_nf, h_edge_nf, n_edge_layers)
+        h_nf = h_node_nf # TODO: remove node and edge h_nf; they have to be same because add in pf_layer
+        self.pf_layer = PairFeaturesLayer(h_nf)
+        self.de_mlp = MLP(h_nf, h_nf, n_edge_layers) 
 
         # node layers
         self.dv_mlp1 = MLP(h_edge_nf, h_node_nf, n_node_layers)
@@ -31,15 +31,18 @@ class GNN(nn.Module):
     def forward(self, node_feats, edge_attr, init = True):
         # init hidden states of nodes and edges
         if init:
-            node_out = self.node_mlp(node_feats)
-            edge_out = self.edge_mlp(edge_attr)
+            node_feats = self.node_mlp(node_feats)
+            edge_attr = self.edge_mlp(edge_attr)
+            # TODO: if not init, then need different dimensions in following mlps here!
+        
+        print(f"gnn fwd: nf {node_feats.shape}, ea {edge_attr.shape}")
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.num_iterations):
-            edge_out = self.edge_model(node_out, edge_out)
-            node_out = self.node_model(node_out, edge_out)
+            edge_attr = self.edge_model(node_feats, edge_attr)
+            node_feats = self.node_model(node_feats, edge_attr)
 
-        return node_out, edge_out
+        return node_feats, edge_attr
 
     def edge_model(self, node_feats, edge_attr):
         f = self.pf_layer(node_feats, edge_attr)
@@ -55,12 +58,13 @@ class GNN(nn.Module):
 
 class PairFeaturesLayer(nn.Module):
 
-    def __init__(self, node_nf, edge_nf, out_nf, act = nn.ReLU()):
+    def __init__(self, h_nf, act = nn.ReLU()):
         super(PairFeaturesLayer, self).__init__()
         
-        self.edge_ij_layer = nn.Linear(edge_nf, out_nf, bias = True)
-        self.node_i_layer = nn.Linear(node_nf, out_nf, bias = False) # first dim unsqueeze?
-        self.node_j_layer = nn.Linear(node_nf, out_nf, bias = False) # second dim unsqueeze?
+        self.h_nf = h_nf
+        self.edge_ij_layer = nn.Linear(h_nf, h_nf, bias = True)
+        self.node_i_layer = nn.Linear(h_nf, h_nf, bias = False) # first dim unsqueeze?
+        self.node_j_layer = nn.Linear(h_nf, h_nf, bias = False) # second dim unsqueeze?
         self.act = act
 
     def forward(self, node_feats, edge_attr):
@@ -68,11 +72,22 @@ class PairFeaturesLayer(nn.Module):
         # not sure if required here
         # NOTE: don't need to get edge_index of features here as assume fully connected graph
 
+        print(f"pf layer fwd: nf {node_feats.shape}, ea {edge_attr.shape}")
+
         f_ij = self.edge_ij_layer(edge_attr)
         f_i = self.node_i_layer(node_feats)
         f_j = self.node_j_layer(node_feats)
 
-        return self.act(f_ij + f_i + f_j)
+        num_atoms = f_i.shape[0]
+        assert num_atoms**2 == f_ij.shape[0], "Number of nodes^2 not equal to number of edge attr." 
+        # TODO: sort out when batch_size > 1
+        fi_fj = torch.randn(num_atoms**2, self.h_nf)
+        for i in range(num_atoms):
+            for j in range(num_atoms):
+                fi_fj[i * num_atoms + j] = torch.matmul(f_i[i], f_j[j]) 
+
+        # return self.act(f_ij + f_i + f_j)
+        return self.act(f_ij + fi_fj)
 
 
 class MLP(nn.Module):

@@ -141,7 +141,7 @@ class TSGenDataset(InMemoryDataset):
             
             node_feats = torch.tensor([type_ids, atomic_ns], dtype = torch.float).t().contiguous()
             atomic_ns = torch.tensor(atomic_ns, dtype = torch.long)
-            edge_attr = torch.tensor([bonded, aromatic, rbf], dtype = torch.long).t().contiguous()
+            edge_attr = torch.tensor([bonded, aromatic, rbf], dtype = torch.float).t().contiguous()
 
             data = TSGenGraph(x = node_feats, z = atomic_ns, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
             data_list.append(data) 

@@ -1,3 +1,4 @@
+import re
 import torch
 import torch.nn as nn
 from torch_geometric.data import DataLoader
@@ -10,8 +11,8 @@ import numpy as np
 
 class TSGen_ExpLog(ExperimentLog):
     # tsgen: save D_init, W, X, loss for each batch in epoch
-    def __init__(self, num_rxns, tt_split, batch_size, epochs, test_interval):
-        super(TSGen_ExpLog, self).__init__(num_rxns, tt_split, batch_size, epochs, test_interval)
+    def __init__(self, num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches = []):
+        super(TSGen_ExpLog, self).__init__(num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches)
         self.epoch_ae_results = []
     
     def add_epoch_result(self, res):
@@ -31,7 +32,6 @@ def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interv
     rxns = TSGenDataset(r'data')
     num_rxns = len(rxns)
     num_train = int(np.floor(tt_split * num_rxns))
-    batch_size = 5
     train_loader = DataLoader(rxns[: num_train], batch_size = batch_size)
     test_loader = DataLoader(rxns[num_train: ], batch_size = batch_size)
 
