@@ -76,16 +76,16 @@ class DistWeightLayer(nn.Module):
         D_init_vec = dist_weight_pred[0] # NOTE: ignore D_init init here
         W_vec = dist_weight_pred[1]
 
-        # reshaping to matrices
+        # reshaping to matrices, TODO: symmetrise here?
         num_atoms = int(np.sqrt(len(D_init_vec)))
         D_init = D_init_vec.view((num_atoms, num_atoms))
         D_init = D_init * (1 - torch.eye(num_atoms)) # remove self loops
         W = W_vec.view((num_atoms, num_atoms))
-    
         return D_init, W, emb
     
 
 class ReconstructCoords:
+    # TODO: remove max_dims as not being used
 
     def __init__(self, max_dims = 21, coord_dims = 3, total_time = 100):
         # simulation constants
@@ -97,7 +97,7 @@ class ReconstructCoords:
         # init
         B = self.dist_to_gram(D)
         X = self.low_rank_approx_power(B)
-        X += torch.randn(D.shape[0], self.max_dims, self.coord_dims) # num_ds, max_node_fs, coord_dims
+        X += torch.randn(D.shape[0], D.shape[1], self.coord_dims) # num_ds, max_node_fs, coord_dims
 
         # opt loop
         t = 0
@@ -108,18 +108,20 @@ class ReconstructCoords:
         return X
     
     def dist_to_gram(self, D):
-        # each elem of D is real so gram matrix is (D^T)D. normalise?
-        return torch.matmul(D.t(), D)
+        N = len(D)
+        D_row = torch.sum(D, 0) / N
+        D_col = torch.sum(D, 1) / N
+        D_mean = torch.sum(D, (0, 1)) / N**2
+        B = - 0.5 * (D - D_row - D_col + D_mean)
+        return B
 
     def low_rank_approx_power(self, A, k = 3, num_steps = 10):
         A_lr = A
-        u_set = []        
+        u_set = []
 
-        for _ in range(k):
-
+        for _ in range(k):    
             # init eigenvector
-            u = torch.unsqueeze(torch.randn(A.shape[:-1]), -1) # this rand might limit to between 0 and 1
-            # not sure if same as tf.rand_normal()
+            u = torch.unsqueeze(torch.randn(A.shape[:-1]), -1) # limits between 0 and 1 unlike tf.rand_normal()
 
             # power iteration
             for _ in range(num_steps):
@@ -131,8 +133,9 @@ class ReconstructCoords:
             u = u / torch.pow(eig_sq + 1e-2, -.25)
             u_set.append(u)
             A_lr = A_lr - torch.matmul(u, u.t())
-        
-        X = torch.cat(u_set, 2)
+
+        # TODO: is NxNx3, but should be Nx3
+        X = torch.stack(u_set, -1) 
         return X
 
     def step_func(self, t, X_t, D, W):
@@ -179,7 +182,7 @@ def train_g2c(g2c, g2c_opt, loader, test = False):
         # run model, calc loss, opt with adam and clipped grad
 
         total_loss = 0
-        res_dict = {'D_init': [], 'W': [], 'X_pred': []}
+        res_dict = {'D_init': [], 'W': [], 'emb': [], 'X_pred': []}
 
         for batch_id, rxn_batch in enumerate(loader):
 

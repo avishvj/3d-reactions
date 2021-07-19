@@ -66,6 +66,7 @@ class PairFeaturesLayer(nn.Module):
 
     def forward(self, node_feats, edge_attr):
         # NOTE: don't need to get edge_index of features here as assume fully connected graph
+        # should you make edge attr like fs here?
 
         f_ij = self.edge_ij_layer(edge_attr)
         f_i = self.node_i_layer(node_feats)
