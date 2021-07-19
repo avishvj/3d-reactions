@@ -24,9 +24,9 @@ class G2C(nn.Module):
 
     def forward(self, node_feats, edge_attr):
         gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, init = True)
-        D_init, W = self.dw_layer(gnn_edge_out)
+        D_init, W, emb = self.dw_layer(gnn_edge_out)
         X_pred = self.recon.dist_nlsq(D_init, W)        
-        return D_init, W, X_pred
+        return D_init, W, emb, X_pred
 
     def rmsd(self, X_pred, X_gt):
         # from https://github.com/charnley/rmsd
@@ -59,16 +59,16 @@ class DistWeightLayer(nn.Module):
     
     def __init__(self, in_nf, h_nf, edge_out_nf = 2, n_layers = 1):
         super(DistWeightLayer, self).__init__()
-
+        
         self.edge_out_nf = edge_out_nf
-
-        # distance pred layers MLP(in_nf, out_nf, n_layers)
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
     
     def forward(self, gnn_edge_out):
 
         edge_out = self.edge_mlp1(gnn_edge_out)
+        emb = torch.sum(edge_out, dim = (0, 1)).unsqueeze(0)
+        print("dwlayer fwd ", edge_out.shape, emb.shape)
         # squeeze edge_out along cols then rows and save as embedding, TODO: shape of output here
         edge_out = self.edge_mlp2(edge_out)
         edge_out = edge_out + edge_out.t() # symmetrise; last dim of edge out should be matrix of 2-tuples, no batch dim
@@ -81,7 +81,7 @@ class DistWeightLayer(nn.Module):
         # weights prediction
         W = nn.Softplus(edge_out[-1][1])
     
-        return D_init, W #, embedding
+        return D_init, W, emb
     
 
 class ReconstructCoords:
@@ -195,7 +195,7 @@ def train_g2c(g2c, g2c_opt, loader, test = False):
             batch_vecs = rxn_batch.batch
 
             # run batch pass of g2c with params
-            D_init, W, X_pred = g2c(node_feats, edge_attr)
+            D_init, W, emb, X_pred = g2c(node_feats, edge_attr)
 
             batch_loss = g2c.rmsd(X_pred, X_gt)
             total_loss += batch_loss
@@ -207,6 +207,7 @@ def train_g2c(g2c, g2c_opt, loader, test = False):
             # log batch results
             res_dict['D_init'].append(D_init)
             res_dict['W'].append(W)
+            res_dict['emb'].append(emb)
             res_dict['X_pred'].append(X_pred)
 
         return total_loss / batch_id, res_dict
