@@ -94,10 +94,12 @@ class ReconstructCoords:
         self.total_time = total_time
 
     def dist_nlsq(self, D, W):
+        # remove one of the dims used in ts_gen
+
         # init
-        B = self.dist_to_gram(D)
-        X = self.low_rank_approx_power(B)
-        X += torch.randn(D.shape[0], D.shape[1], self.coord_dims) # N x N x coord_dims
+        B = self.dist_to_gram(D) # 15x15
+        X = self.low_rank_approx_power(B) # want 15x3, currently got 15x15x3
+        X += torch.randn(D.shape[0], self.coord_dims) # Nx3
 
         # opt loop
         t = 0
@@ -121,21 +123,20 @@ class ReconstructCoords:
 
         for _ in range(k):    
             # init eigenvector
-            u = torch.unsqueeze(torch.randn(A.shape[:-1]), -1) # limits between 0 and 1 unlike tf.rand_normal()
+            u = torch.randn(A.shape[:-1]) # limits between 0 and 1 unlike tf.rand_normal()
 
             # power iteration
             for _ in range(num_steps):
-                u = F.normalize(u, dim = 1, p = 2, eps = 1e-3) # 1 for row, 2 for l2 norm
+                u = F.normalize(u, dim = 0, p = 2, eps = 1e-3) # 1 for row, 2 for l2 norm
                 u = torch.matmul(A_lr, u)
             
             # rescale by sqrt(eigenvalue)
-            eig_sq = torch.sum(torch.square(u), 1)
-            u = u / torch.pow(eig_sq + 1e-2, -.25)
+            eig_sq = torch.sum(torch.square(u), 0, keepdim = True) 
+            u = u / torch.pow(eig_sq + 1e-2, 0.25)
             u_set.append(u)
             A_lr = A_lr - torch.matmul(u, u.t())
 
-        # TODO: is NxNx3, but should be Nx3
-        X = torch.stack(u_set, -1) 
+        X = torch.stack(u_set, -1)
         return X
 
     def step_func(self, t, X_t, D, W):
@@ -151,7 +152,7 @@ class ReconstructCoords:
         dX = - tsg_eps1 * g
 
         # speed clipping (how fast in Angstroms)
-        speed = torch.sqrt(torch.sum(torch.square(dX), 2, keepdim = True) + tsg_eps2)
+        speed = torch.sqrt(torch.sum(torch.square(dX), 1, keepdim = True) + tsg_eps2)
 
         # alpha sets max speed (soft trust region)
         alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
@@ -167,12 +168,11 @@ class ReconstructCoords:
         U = torch.sum(W * torch.square(D - D_Xt))
         g = torch.autograd.grad(U, X_t)
         return g
-
+    
     def get_euc_dist(self, X):
-        # NOTE: to be redone as X is NxNx3 right now
         tsg_eps = 1e-2
-        # D_sq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
-        D = torch.sum(X, 2) + tsg_eps 
+        D_sq = torch.square(torch.unsqueeze(X, 0) - torch.unsqueeze(X, 1))
+        D = torch.sum(D_sq, 2) + tsg_eps
         return D
 
 
