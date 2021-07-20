@@ -30,9 +30,9 @@ class G2C(nn.Module):
 
     def rmsd(self, X_pred, X_gt):
         # from https://github.com/charnley/rmsd
-        diff = np.array(X_pred) - np.array(X_gt)
+        diff = X_pred - X_gt
         num_atoms = len(X_pred)
-        return np.sqrt((diff * diff).sum() / num_atoms)
+        return torch.sqrt((diff * diff).sum() / num_atoms)
 
     def ts_gen_rmsd(self, X_pred, X_gt):
         # reduce same on X1 and X2
@@ -194,13 +194,12 @@ def train_g2c(g2c, g2c_opt, loader, test = False):
             
             # batch
             node_feats, edge_attr = rxn_batch.x, rxn_batch.edge_attr
-            print(f"train node_fs {node_feats.shape}, edge_attr {edge_attr.shape}")
+            # print(f"train node_fs {node_feats.shape}, edge_attr {edge_attr.shape}")
             X_gt = rxn_batch.pos
             batch_vecs = rxn_batch.batch
 
             # run batch pass of g2c with params
             D_init, W, emb, X_pred = g2c(node_feats, edge_attr)
-            print(X_pred.shape, X_gt.shape)
 
             batch_loss = g2c.rmsd(X_pred, X_gt)
             total_loss += batch_loss
