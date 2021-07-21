@@ -20,8 +20,8 @@ class TSGen_ExpLog(ExperimentLog):
 
 def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 5):
     # ablation study:
-    # 1) drop recon_layer
-    # 2) do loss with coords instead of dist matrix?
+    # 1) drop recon_layer, train on D_init, need to create D_GT from X_GT
+    # 2) loss with coords and/or D
     # 3) use recon (a) init (b) opt
     # 4) change W used in pytorch, pull init out
     # 5) add noise to training coords and run NLS for diff D_inits
@@ -39,7 +39,7 @@ def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interv
     in_node_nf, in_edge_nf = train_loader.dataset[0].x.size(1), train_loader.dataset[0].edge_attr.size(1)
     h_nf, n_layers, num_iterations = 100, 2, 3
     g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
-    g2c_opt = torch.optim.Adam(g2c.parameters(), lr = 1e-3)
+    g2c_opt = torch.optim.Adam(g2c.parameters(), lr = 1e-4)
 
     experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval)
     model_params = (g2c, g2c_opt)

@@ -64,9 +64,14 @@ class PairFeaturesLayer(nn.Module):
         self.node_j_layer = nn.Linear(h_nf, h_nf, bias = False) # second dim unsqueeze?
         self.act = act
 
-    def forward(self, node_feats, edge_attr):
+    def forward2(self, node_feats, edge_attr):
         # NOTE: don't need to get edge_index of features here as assume fully connected graph
         # should you make edge attr like fs here?
+
+#- Want to get node: (batch x) N x h, edge: (batch x) N x N x h; then add node to each N dim
+#- Run with batch size = 1; batch size =2 to test; set constants to primer numbers so can't broadcast; don't squeeze out the batch dim OR
+#- The way it's done in PyG; FC but dist features
+#- Either way, be careful about which dims expanding when lining up
 
         f_ij = self.edge_ij_layer(edge_attr)
         f_i = self.node_i_layer(node_feats)
@@ -81,7 +86,21 @@ class PairFeaturesLayer(nn.Module):
                 fi_fj[i * num_atoms + j] = torch.matmul(f_i[i], f_j[j]) 
 
         # return self.act(f_ij + f_i + f_j)
+        return 0
         return self.act(f_ij + fi_fj)
+    
+    def forward(self, node_feats, edge_attr):
+        
+        f_ij = self.edge_ij_layer(edge_attr)
+        f_i = self.node_i_layer(node_feats)
+        f_j = self.node_j_layer(node_feats)
+
+        N = len(node_feats)
+        f_ij = f_ij.view(N, N, self.h_nf)
+        f_i = torch.unsqueeze(f_i, 0)
+        f_j = torch.unsqueeze(f_j, 1)
+
+        return self.act(f_ij + f_i + f_j)
 
 
 class MLP(nn.Module):
