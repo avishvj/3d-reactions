@@ -26,9 +26,10 @@ class TSGenGraph(Data):
 class TSGenData(Data):
     # seeing if works
     # fully connected graph so don't need to specify edge_index
+    # assumes max_num_nodes used so constant values for batching
 
     def __init__(self, x = None, pos = None, edge_attr = None, idx = None):
-        super(TSGenGraph, self).__init__(x = x, pos = pos, edge_attr = edge_attr)
+        super(TSGenData, self).__init__(x = x, pos = pos, edge_attr = edge_attr)
         self.idx = idx
 
     def __inc__(self, key, value):
@@ -40,7 +41,7 @@ class TSGenData(Data):
     def __cat_dim__(self, key, item):
         # NOTE: automatically figures out .x and .pos
         if key == 'edge_attr':
-            return (0, 1) # since N x N x edge_attr
+            return 2 # since N x N x num_edge_attr
         else:
             return super().__cat_dim__(key, item) 
 
@@ -50,7 +51,7 @@ class TSGenDataset(InMemoryDataset):
     # constants
     MAX_D = 10.
     COORD_DIM = 3
-    ELEM_TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
+    ELEM_TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3}
     NUM_ELEMS = len(ELEM_TYPES)
     TEMP_MOLS_LIMIT = 10
     NUM_EDGE_ATTR = 3
@@ -109,7 +110,7 @@ class TSGenDataset(InMemoryDataset):
                                                 ({len(tss)}), products ({len(ps)}) don't match."
 
         geometries = list(zip(rs, tss, ps))
-        data_list = self.process_geometries_2(geometries)
+        data_list = self.process_geometries_3(geometries)
         torch.save(self.collate(data_list), self.processed_paths[0])
 
     def process_geometries_1(self, geometries):
@@ -227,57 +228,57 @@ class TSGenDataset(InMemoryDataset):
         return data_list
 
 
-def process_geometries_3(self, geometries):
-    """Process all geometries in same manner as ts_gen."""
+    def process_geometries_3(self, geometries):
+        """Process all geometries in same manner as ts_gen."""
 
-    # TODO: add edge_index here then use specific features 
-    # or use mask and replicate them
-    
-    data_list = []
-    
-    for rxn_id, rxn in enumerate(tqdm(geometries)):
-
-        if rxn_id == self.TEMP_MOLS_LIMIT:
-            break
-
-        r, ts, p = rxn
-        num_atoms = r.GetNumAtoms()
-
-        # dist matrices
-        D = (Chem.GetDistanceMatrix(r) + Chem.GetDistanceMatrix(p)) / 2
-        D[D > self.MAX_D] = self.MAX_D
-        D_3D_rbf = np.exp(-((Chem.Get3DDistanceMatrix(r) + Chem.Get3DDistanceMatrix(p)) / 2))  
-
-        # node feats, edge attr, ts gt coords init
-        node_feats = torch.zeros(self.MAX_NUM_ATOMS, self.NUM_NODE_FEATS, dtype = torch.float)
-        edge_attr = torch.zeros(self.MAX_NUM_ATOMS, self.MAX_NUM_ATOMS, self.NUM_EDGE_ATTR)
-        ts_gt_pos = torch.zeros((num_atoms, self.COORD_DIM))
-        ts_conf = ts.GetConformer()
+        # TODO: add edge_index here then use specific features 
+        # or use mask and replicate them
         
-        for i in range(num_atoms):
+        data_list = []
+        
+        for rxn_id, rxn in enumerate(tqdm(geometries)):
 
-            # node feats
-            atom = r.GetAtomWithIdx(i)
-            e_ix = self.ELEM_TYPES[atom.GetSymbol()]
-            node_feats[i][e_ix] = 1
-            node_feats[i][self.NUM_ELEMS] = atom.GetAtomicNum() / 10.
+            if rxn_id == self.TEMP_MOLS_LIMIT:
+                break
 
-            # ts coordinates: atom positions as matrix w shape [num_atoms, 3]
-            pos = ts_conf.GetAtomPosition(i)
-            ts_gt_pos[i] = torch.tensor([pos.x, pos.y, pos.z])
+            r, ts, p = rxn
+            num_atoms = r.GetNumAtoms()
+
+            # dist matrices
+            D = (Chem.GetDistanceMatrix(r) + Chem.GetDistanceMatrix(p)) / 2
+            D[D > self.MAX_D] = self.MAX_D
+            D_3D_rbf = np.exp(-((Chem.Get3DDistanceMatrix(r) + Chem.Get3DDistanceMatrix(p)) / 2))  
+
+            # node feats, edge attr, ts gt coords init
+            node_feats = torch.zeros(self.MAX_NUM_ATOMS, self.NUM_NODE_FEATS, dtype = torch.float)
+            edge_attr = torch.zeros(self.MAX_NUM_ATOMS, self.MAX_NUM_ATOMS, self.NUM_EDGE_ATTR)
+            ts_gt_pos = torch.zeros((self.MAX_NUM_ATOMS, self.COORD_DIM))
+            ts_conf = ts.GetConformer()
             
-            # edge attrs
-            for j in range(num_atoms):
-                if D[i][j] == 1: # if stays bonded
-                    edge_attr[i][j][0] = 1 # bonded?
-                    if r.GetBondBetweenAtoms(i, j).GetIsAromatic():
-                        edge_attr[i][j][1] = 1 # aromatic?
-                edge_attr[i][j][2] = D_3D_rbf[i][j] # 3d rbf
+            for i in range(num_atoms):
 
-        data = TSGenData(x = node_feats, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
-        data_list.append(data) 
+                # node feats
+                atom = r.GetAtomWithIdx(i)
+                e_ix = self.ELEM_TYPES[atom.GetSymbol()]
+                node_feats[i][e_ix] = 1
+                node_feats[i][self.NUM_ELEMS] = atom.GetAtomicNum() / 10.
 
-    return data_list
+                # ts coordinates: atom positions as matrix w shape [num_atoms, 3]
+                pos = ts_conf.GetAtomPosition(i)
+                ts_gt_pos[i] = torch.tensor([pos.x, pos.y, pos.z])
+                
+                # edge attrs
+                for j in range(num_atoms):
+                    if D[i][j] == 1: # if stays bonded
+                        edge_attr[i][j][0] = 1 # bonded?
+                        if r.GetBondBetweenAtoms(i, j).GetIsAromatic():
+                            edge_attr[i][j][1] = 1 # aromatic?
+                    edge_attr[i][j][2] = D_3D_rbf[i][j] # 3d rbf
+
+            data = TSGenData(x = node_feats, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
+            data_list.append(data) 
+
+        return data_list
 
 
 
