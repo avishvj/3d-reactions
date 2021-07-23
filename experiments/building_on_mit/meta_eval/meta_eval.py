@@ -35,8 +35,8 @@ def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interv
     train_loader = DataLoader(rxns[: num_train], batch_size = batch_size)
     test_loader = DataLoader(rxns[num_train: ], batch_size = batch_size)
 
-    # model and opt
-    in_node_nf, in_edge_nf = train_loader.dataset[0].x.size(1), train_loader.dataset[0].edge_attr.size(1)
+    # model and opt, NOTE: edge_attr.size(2)
+    in_node_nf, in_edge_nf = train_loader.dataset[0].x.size(1), train_loader.dataset[0].edge_attr.size(2)
     h_nf, n_layers, num_iterations = 100, 2, 3
     g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
     g2c_opt = torch.optim.Adam(g2c.parameters(), lr = 1e-4)

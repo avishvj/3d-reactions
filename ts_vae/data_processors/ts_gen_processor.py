@@ -28,8 +28,9 @@ class TSGenData(Data):
     # fully connected graph so don't need to specify edge_index
     # assumes max_num_nodes used so constant values for batching
 
-    def __init__(self, x = None, pos = None, edge_attr = None, idx = None):
+    def __init__(self, x = None, pos = None, edge_attr = None, num_atoms = None, idx = None):
         super(TSGenData, self).__init__(x = x, pos = pos, edge_attr = edge_attr)
+        self.num_atoms = num_atoms
         self.idx = idx
 
     def __inc__(self, key, value):
@@ -275,7 +276,7 @@ class TSGenDataset(InMemoryDataset):
                             edge_attr[i][j][1] = 1 # aromatic?
                     edge_attr[i][j][2] = D_3D_rbf[i][j] # 3d rbf
 
-            data = TSGenData(x = node_feats, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
+            data = TSGenData(x = node_feats, pos = ts_gt_pos, edge_attr = edge_attr, num_atoms = num_atoms, idx = rxn_id)
             data_list.append(data) 
 
         return data_list

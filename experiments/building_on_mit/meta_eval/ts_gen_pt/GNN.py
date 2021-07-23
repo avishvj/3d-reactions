@@ -6,6 +6,9 @@ from torch_scatter import scatter_sum
 # trying a pytorch version of MIT ts_gen: https://github.com/PattanaikL/ts_gen
 
 class GNN(nn.Module):
+    
+    # constants
+    NUM_EDGE_ATTR = 3
 
     def __init__(self, in_node_nf, in_edge_nf, num_iterations = 3, \
         n_node_layers = 2, h_node_nf = 100, n_edge_layers = 2, h_edge_nf = 100):
@@ -13,6 +16,7 @@ class GNN(nn.Module):
         # don't need masks because of PyTG batching
         
         self.num_iterations = num_iterations
+        self.h_nf = h_node_nf
 
         # init layers
         self.node_mlp = MLP(in_node_nf, h_node_nf, n_node_layers)
@@ -29,6 +33,12 @@ class GNN(nn.Module):
         
     
     def forward(self, node_feats, edge_attr, init = True):
+
+        N = len(node_feats)
+
+        # reshape edge_attr from NxNxEA to N^2xEA for use in mlps
+        edge_attr = edge_attr.view(N**2, self.NUM_EDGE_ATTR)
+
         # init hidden states of nodes and edges
         if init:
             node_feats = self.node_mlp(node_feats)
@@ -44,7 +54,7 @@ class GNN(nn.Module):
 
     def edge_model(self, node_feats, edge_attr):
         f = self.pf_layer(node_feats, edge_attr)
-        dE = self.de_mlp(f)
+        dE = self.de_mlp(f).view(len(node_feats)**2, self.h_nf) 
         return edge_attr + dE
 
     def node_model(self, node_feats, edge_attr):
@@ -64,7 +74,7 @@ class PairFeaturesLayer(nn.Module):
         self.node_j_layer = nn.Linear(h_nf, h_nf, bias = False) # second dim unsqueeze?
         self.act = act
 
-    def forward2(self, node_feats, edge_attr):
+    def forward1(self, node_feats, edge_attr):
         # NOTE: don't need to get edge_index of features here as assume fully connected graph
         # should you make edge attr like fs here?
 
