@@ -81,7 +81,7 @@ class DistWeightLayer(nn.Module):
 class ReconstructCoords:
 
     def __init__(self, total_time = 100):
-        # simulation constants
+        # simulation constants, TODO: move alphas + any other constants
         self.total_time = total_time
 
     def dist_nlsq(self, D, W, batch_size):
