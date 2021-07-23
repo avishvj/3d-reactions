@@ -2,11 +2,8 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter_sum
 
-# trying a pytorch version of MIT ts_gen: https://github.com/PattanaikL/ts_gen
-
 class GNN(nn.Module):
-
-    # constants
+    """PyTorch version of MIT's transition state generator https://github.com/PattanaikL/ts_gen. """
     NUM_EDGE_ATTR = 3
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf = 100, n_layers = 2, num_iterations = 3):
@@ -38,7 +35,7 @@ class GNN(nn.Module):
         edge_attr = self.edge_mlp(edge_attr)
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
-        for i in range(self.num_iterations):
+        for _ in range(self.num_iterations):
             edge_attr = self.edge_model(node_feats, edge_attr)
             node_feats = self.node_model(node_feats, edge_attr, N)
 
@@ -69,11 +66,7 @@ class PairFeaturesLayer(nn.Module):
         self.act = act
 
     def forward(self, node_feats, edge_attr):
-        # edge_attr dim: N^2xEA
-
-#- Want to get node: (batch x) N x h, edge: (batch x) N x N x h; then add node to each N dim
-#- Run with batch size = 1; batch size =2 to test; set constants to prime numbers so can't broadcast
-#- Either way, be careful about which dims expanding when lining up
+        # edge_attr input dim: N^2xEA
 
         f_ij = self.edge_ij_layer(edge_attr)
         f_i = self.node_i_layer(node_feats)

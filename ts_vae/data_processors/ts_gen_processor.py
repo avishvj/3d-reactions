@@ -28,8 +28,6 @@ class TSGenData(Data):
 
 class TSGenDataset(InMemoryDataset):
     """Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product)."""
-
-    # constants
     MAX_D = 10.
     COORD_DIM = 3
     ELEM_TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3}
