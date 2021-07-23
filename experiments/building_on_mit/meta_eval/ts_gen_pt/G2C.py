@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import numpy as np
 from .GNN import GNN, MLP
 
+MAX_N = 21
+
 class G2C(nn.Module):
     """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen. """
 
@@ -16,7 +18,7 @@ class G2C(nn.Module):
 
     def forward(self, node_feats, edge_attr, batch_size):
         gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size)
-        D_init, W, emb = self.dw_layer(gnn_edge_out)
+        D_init, W, emb = self.dw_layer(gnn_edge_out, batch_size)
         X_pred = self.recon.dist_nlsq(D_init, W)        
         return D_init, W, emb, X_pred
 
@@ -51,28 +53,24 @@ class DistWeightLayer(nn.Module):
     
     def __init__(self, in_nf, h_nf, edge_out_nf = 2, n_layers = 1):
         super(DistWeightLayer, self).__init__()
-        
+        self.h_nf = h_nf
         self.edge_out_nf = edge_out_nf
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
     
-    def forward(self, gnn_edge_out):
-
+    def forward(self, gnn_edge_out, batch_size):
+        
+        # init mlps and embedding
         edge_out = self.edge_mlp1(gnn_edge_out)
-        emb = torch.sum(edge_out, dim = (0, 1)).unsqueeze(0)
-        edge_out = self.edge_mlp2(edge_out) # shape: num_atoms^2 * 2
-        # TODO: symmetrise? but shape is irregular? do i need to make num_atoms x num_atoms then add?
+        emb = torch.sum(edge_out.view(batch_size, MAX_N, MAX_N, self.h_nf), dim = (1, 2))
+        edge_out = self.edge_mlp2(edge_out).view(batch_size, MAX_N, MAX_N, self.edge_out_nf) 
 
         # distance weight predictions
-        dist_weight_pred = nn.Softplus()(edge_out.t())
-        D_init_vec = dist_weight_pred[0] # NOTE: ignore D_init init here
-        W_vec = dist_weight_pred[1]
-
-        # reshaping to matrices, TODO: symmetrise here?
-        num_atoms = int(np.sqrt(len(D_init_vec)))
-        D_init = D_init_vec.view((num_atoms, num_atoms))
-        D_init = D_init * (1 - torch.eye(num_atoms)) # remove self loops
-        W = W_vec.view((num_atoms, num_atoms))
+        edge_out = edge_out + torch.transpose(edge_out, 2, 1) # symmetrise
+        dist_weight_pred = nn.Softplus()(edge_out)
+        D_init = dist_weight_pred[:,:,:, 0] # dim = batch_size x max_N x max_N NOTE: ignore constant init of D_init here
+        D_init = D_init * (1 - torch.eye(MAX_N))
+        W = dist_weight_pred[:,:,:, 1]
         return D_init, W, emb
     
 
