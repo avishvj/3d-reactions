@@ -5,6 +5,7 @@ import numpy as np
 from .GNN import GNN, MLP
 
 MAX_N = 21
+COORD_DIMS = 3
 
 class G2C(nn.Module):
     """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen. """
@@ -19,16 +20,16 @@ class G2C(nn.Module):
     def forward(self, node_feats, edge_attr, batch_size):
         gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size)
         D_init, W, emb = self.dw_layer(gnn_edge_out, batch_size)
-        X_pred = self.recon.dist_nlsq(D_init, W)        
+        X_pred = self.recon.dist_nlsq(D_init, W, batch_size)        
         return D_init, W, emb, X_pred
 
-    def rmsd(self, X_pred, X_gt):
+    def rmsd1(self, X_pred, X_gt):
         # from https://github.com/charnley/rmsd
         diff = X_pred - X_gt
         num_atoms = len(X_pred)
         return torch.sqrt((diff * diff).sum() / num_atoms)
 
-    def ts_gen_rmsd(self, X_pred, X_gt):
+    def rmsd(self, X_pred, X_gt):
         # reduce same on X1 and X2
         # times masks
         # perturb
@@ -37,13 +38,28 @@ class G2C(nn.Module):
         # X1 align
         # calc rmsd
 
+        assert X_pred.shape == X_gt.shape, f"Your coordinate matrices don't match! \
+                                            X_pred dim: {X_pred.shape}, X_gt dim: {X_gt.shape}"
+
+        # sum both Xs along max_nodes dim
+        X_pred = X_pred - torch.sum(X_pred, 1, keepdim = True)
+        X_gt = X_gt - torch.sum(X_gt, 1, keepdim = True)
+        
+        # add perturbation
         eps = 1e-2
         X_pred_perturb = X_pred + eps * torch.randn(X_pred.shape)
-        X_gt_perturb = X_gt + eps * torch.randn(X_gt.shape)
-        A= torch.matmul(X_gt_perturb, X_pred_perturb)
-        U, S, V_H = torch.linalg.svd(A, full_matrices = True) # are these same as ts_gen?
+        X_gt_perturb = X_gt + eps * torch.randn(X_pred.shape)
 
-        pass    
+        # multiply perturbed and align
+        A = torch.matmul(X_gt_perturb.permute(0, 2, 1), X_pred_perturb) 
+        U, S, V_H = torch.linalg.svd(A, full_matrices = True) # svdals() instead?
+        X_pred_align = torch.matmul(U, torch.matmul(V_H, X_pred.permute(0, 2, 1)))
+        X_pred_align = X_pred_align.permute(0, 2, 1)
+
+        # calc metrics
+        msd = torch.sum(torch.square(X_pred_align - X_gt), (1, 2))
+        rmsd = torch.mean(torch.sqrt(msd + 1e-3))
+        return rmsd, X_pred_align
 
     def clip_gradients(self):
         pass
@@ -83,13 +99,34 @@ class ReconstructCoords:
         self.coord_dims = coord_dims
         self.total_time = total_time
 
-    def dist_nlsq(self, D, W):
-        # remove one of the dims used in ts_gen
+
+    def distance_to_gram(self, D, mask):
+        """ Convert distance to gram matrix """
+        N_f32 = tf.to_float(self.placeholders["sizes"])
+        D = tf.square(D)
+        D_row = tf.reduce_sum(D, 1, keep_dims=True) \
+            / tf.reshape(N_f32, [-1,1,1])
+        D_col = tf.reduce_sum(D, 2, keep_dims=True) \
+            / tf.reshape(N_f32, [-1,1,1])
+        D_mean = tf.reduce_sum(D, [1,2], keep_dims=True) \
+            / tf.reshape(tf.square(N_f32), [-1,1,1])
+        B = mask * -0.5 * (D - D_row - D_col + D_mean)
+        return B
+
+    def dist_to_gram(self, D):
+        D = torch.square(D)
+        D_row = torch.sum(D, 1, keepdim = True) / MAX_N
+        D_col = torch.sum(D, 2, keepdim = True) / MAX_N
+        D_mean = torch.sum(D, (1, 2), keepdim = True) / MAX_N**2
+        B = -0.5 * (D - D_row - D_col + D_mean)
+        return B
+
+    def dist_nlsq(self, D, W, batch_size):
 
         # init
-        B = self.dist_to_gram(D) # 15x15
+        B = self.dist_to_gram(D) 
         X = self.low_rank_approx_power(B) # want 15x3, currently got 15x15x3
-        X += torch.randn(D.shape[0], self.coord_dims) # Nx3
+        X += torch.randn(batch_size, MAX_N, self.coord_dims) # Nx3
 
         # opt loop
         t = 0
@@ -99,7 +136,7 @@ class ReconstructCoords:
         
         return X
     
-    def dist_to_gram(self, D):
+    def dist_to_gram1(self, D):
         N = len(D)
         D_row = torch.sum(D, 0, keepdim = True) / N
         D_col = torch.sum(D, 1, keepdim = True) / N
@@ -111,9 +148,10 @@ class ReconstructCoords:
         A_lr = A
         u_set = []
 
-        for _ in range(k):    
+        for _ in range(k):
+
             # init eigenvector
-            u = torch.randn(A.shape[:-1]) # limits between 0 and 1 unlike tf.rand_normal()
+            u = torch.unsqueeze(torch.randn(A.shape[:-1]), -1) # limits between 0 and 1 unlike tf.rand_normal()
 
             # power iteration
             for _ in range(num_steps):
@@ -121,12 +159,12 @@ class ReconstructCoords:
                 u = torch.matmul(A_lr, u)
             
             # rescale by sqrt(eigenvalue)
-            eig_sq = torch.sum(torch.square(u), 0, keepdim = True) 
+            eig_sq = torch.sum(torch.square(u), 1, keepdim = True) 
             u = u / torch.pow(eig_sq + 1e-2, 0.25)
             u_set.append(u)
-            A_lr = A_lr - torch.matmul(u, u.t())
-
-        X = torch.stack(u_set, -1)
+            A_lr = A_lr - torch.matmul(u, u.permute(0, 2, 1))
+        
+        X = torch.cat(u_set, 2)
         return X
 
     def step_func(self, t, X_t, D, W):
@@ -138,31 +176,31 @@ class ReconstructCoords:
         T = self.total_time
 
         # init g and dx
-        g = self.grad_func(X_t, D, W)[0] # weirdly returns tuple of len 1
-        dX = - tsg_eps1 * g
+        g = self.grad_func(X_t, D, W)[0] # g = tuple(tensor,)[0]
+        dX = - tsg_eps1 * g # dX dim: batch_size x max_N x coord_dims
 
         # speed clipping (how fast in Angstroms)
-        speed = torch.sqrt(torch.sum(torch.square(dX), 1, keepdim = True) + tsg_eps2)
+        speed = torch.sqrt(torch.sum(torch.square(dX), 2, keepdim = True) + tsg_eps2)
 
         # alpha sets max speed (soft trust region)
         alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
         scale = alpha_t * torch.tanh(speed / alpha_t) / speed
         dX *= scale
-
-        X_new = X_t + dX
+        X_new = X_t + dX # X_new dim: batch_size x max_N x coord_dims
         return t+1, X_new
     
     def grad_func(self, X_t, D, W):
         # dist -> energy -> grad
-        D_Xt = self.get_euc_dist(X_t)
-        U = torch.sum(W * torch.square(D - D_Xt))
+        # X_t dim: batch_size x max_N x 3
+        D_Xt = self.get_euc_dist(X_t) # D_xt dim: batch_size x max_N x max_N
+        U = torch.sum(torch.sum(W * torch.square(D - D_Xt), (1, 2))) # U dim: scalar
         g = torch.autograd.grad(U, X_t)
         return g
     
     def get_euc_dist(self, X):
         tsg_eps = 1e-2
-        D_sq = torch.square(torch.unsqueeze(X, 0) - torch.unsqueeze(X, 1))
-        D = torch.sum(D_sq, 2) + tsg_eps
+        D_sq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
+        D = torch.sum(D_sq, 3) + tsg_eps
         return D
 
 
@@ -184,13 +222,13 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             
             # batch
             node_feats, edge_attr = rxn_batch.x, rxn_batch.edge_attr
-            X_gt = rxn_batch.pos
             batch_size = len(rxn_batch.idx)
+            X_gt = rxn_batch.pos.view(batch_size, MAX_N, COORD_DIMS)
 
             # run batch pass of g2c with params
             D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size)
 
-            batch_loss = g2c.rmsd(X_pred, X_gt)
+            batch_loss, _ = g2c.rmsd(X_pred, X_gt)
             total_loss += batch_loss
 
             if not test:
