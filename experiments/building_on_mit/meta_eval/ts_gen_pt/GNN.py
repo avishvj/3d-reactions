@@ -2,9 +2,12 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter_sum
 
+# class global constants, TODO: move these into sep file
+NUM_EDGE_ATTR = 3
+MAX_N = 21
+
 class GNN(nn.Module):
     """PyTorch version of MIT's ts_gen GNN model https://github.com/PattanaikL/ts_gen. """
-    NUM_EDGE_ATTR = 3
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf = 100, n_layers = 2, num_iterations = 3):
         super(GNN, self).__init__()
@@ -24,32 +27,29 @@ class GNN(nn.Module):
         self.dv_mlp1 = MLP(h_nf, h_nf, n_layers)
         self.dv_mlp2 = MLP(h_nf, h_nf, n_layers)
 
-    def forward(self, node_feats, edge_attr):
+    def forward(self, node_feats, edge_attr, batch_size):
         
-        # reshape edge_attr from NxNxEA to N^2xEA for use in mlps, TODO: batch?
-        N = len(node_feats)
-        edge_attr = edge_attr.view(N**2, self.NUM_EDGE_ATTR)
-
         # init hidden states of nodes and edges
         node_feats = self.node_mlp(node_feats)
         edge_attr = self.edge_mlp(edge_attr)
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.num_iterations):
-            edge_attr = self.edge_model(node_feats, edge_attr)
-            node_feats = self.node_model(node_feats, edge_attr, N)
+            edge_attr = self.edge_model(node_feats, edge_attr, batch_size)
+            node_feats = self.node_model(node_feats, edge_attr, batch_size)
 
         return node_feats, edge_attr
 
-    def edge_model(self, node_feats, edge_attr):
-        f = self.pf_layer(node_feats, edge_attr)
+    def edge_model(self, node_feats, edge_attr, batch_size):
+        f = self.pf_layer(node_feats, edge_attr, batch_size)
         dE = self.de_mlp(f)
         return edge_attr + dE
 
-    def node_model(self, node_feats, edge_attr, N):
+    def node_model(self, node_feats, edge_attr, batch_size):
         dV = self.dv_mlp1(edge_attr)
-        dV = dV.view(N, N, self.h_nf)
-        dV = torch.sum(dV, 1)
+        # reshape out from (batch_size * MAX_N**2, h_nf)
+        dV = dV.view(batch_size, MAX_N, MAX_N, self.h_nf)
+        dV = torch.sum(dV, 2).view(batch_size * MAX_N, self.h_nf)
         dV = self.dv_mlp2(dV)
         return node_feats + dV
 
@@ -65,19 +65,18 @@ class PairFeaturesLayer(nn.Module):
         self.node_j_layer = nn.Linear(h_nf, h_nf, bias = False) 
         self.act = act
 
-    def forward(self, node_feats, edge_attr):
+    def forward(self, node_feats, edge_attr, batch_size):
         # edge_attr input dim: N^2xEA
-
         f_ij = self.edge_ij_layer(edge_attr)
         f_i = self.node_i_layer(node_feats)
         f_j = self.node_j_layer(node_feats)
 
         # unsqueeze for final addition, then squeeze back again
-        N = len(node_feats)
-        f_ij = f_ij.view(N, N, self.h_nf)
-        f_i = torch.unsqueeze(f_i, 0)
-        f_j = torch.unsqueeze(f_j, 1)
-        return self.act(f_ij + f_i + f_j).view(N**2, self.h_nf) 
+        f_ij = f_ij.view(batch_size, MAX_N, MAX_N, self.h_nf)
+        f_i = torch.unsqueeze(f_i.view(2, 21, 100), 1)
+        f_j = torch.unsqueeze(f_i.view(2, 21, 100), 2)
+        s = self.act(f_ij + f_i + f_j).view(batch_size * MAX_N**2, self.h_nf) 
+        return s
 
 
 class MLP(nn.Module):

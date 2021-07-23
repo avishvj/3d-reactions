@@ -22,7 +22,7 @@ class TSGenData(Data):
     def __cat_dim__(self, key, item):
         # NOTE: automatically figures out .x and .pos
         if key == 'edge_attr':
-            return 2 # since N x N x num_edge_attr
+            return 0 # N^2 x num_edge_attr
         else:
             return super().__cat_dim__(key, item) 
 
@@ -136,6 +136,7 @@ class TSGenDataset(InMemoryDataset):
                             edge_attr[i][j][1] = 1 # aromatic?
                     edge_attr[i][j][2] = D_3D_rbf[i][j] # 3d rbf
 
+            edge_attr = edge_attr.view(self.MAX_NUM_ATOMS**2, self.NUM_EDGE_ATTR) # 3d to 2d to make batching easier
             data = TSGenData(x = node_feats, pos = ts_gt_pos, edge_attr = edge_attr, num_atoms = num_atoms, idx = rxn_id)
             data_list.append(data) 
 

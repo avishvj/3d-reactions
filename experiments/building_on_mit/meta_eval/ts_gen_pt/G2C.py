@@ -14,8 +14,8 @@ class G2C(nn.Module):
         self.recon = ReconstructCoords(max_dims = 21, coord_dims = 3, total_time = 100)
         self.to(device)
 
-    def forward(self, node_feats, edge_attr):
-        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr)
+    def forward(self, node_feats, edge_attr, batch_size):
+        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size)
         D_init, W, emb = self.dw_layer(gnn_edge_out)
         X_pred = self.recon.dist_nlsq(D_init, W)        
         return D_init, W, emb, X_pred
@@ -186,12 +186,11 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             
             # batch
             node_feats, edge_attr = rxn_batch.x, rxn_batch.edge_attr
-            # print(f"train node_fs {node_feats.shape}, edge_attr {edge_attr.shape}")
             X_gt = rxn_batch.pos
-            batch_vecs = rxn_batch.batch
+            batch_size = len(rxn_batch.idx)
 
             # run batch pass of g2c with params
-            D_init, W, emb, X_pred = g2c(node_feats, edge_attr)
+            D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size)
 
             batch_loss = g2c.rmsd(X_pred, X_gt)
             total_loss += batch_loss
