@@ -19,7 +19,7 @@ class G2C(nn.Module):
         self.to(device)
 
     def forward(self, node_feats, edge_attr):
-        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, init = True)
+        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr)
         D_init, W, emb = self.dw_layer(gnn_edge_out)
         X_pred = self.recon.dist_nlsq(D_init, W)        
         return D_init, W, emb, X_pred

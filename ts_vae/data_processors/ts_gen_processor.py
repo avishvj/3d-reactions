@@ -4,27 +4,7 @@ from torch_geometric.data import InMemoryDataset, Data, DataLoader
 from rdkit import Chem
 from tqdm import tqdm
 
-class TSGenGraph(Data):
-
-    def __init__(self, x = None, z = None, pos = None, edge_attr = None, idx = None):
-        super(TSGenGraph, self).__init__(x = x, edge_attr = edge_attr, y = z, pos = pos)
-        self.idx = idx
-
-    def __inc__(self, key, value):
-        if key == 'edge_attr':
-            return self.x.size(0)
-        else:
-            return super().__inc__(key, value)
-    
-    def __cat_dim__(self, key, item):
-        # NOTE: automatically figures out .x and .pos
-        if key == 'edge_attr':
-            return (0, 1) # since N x N x edge_attr
-        else:
-            return super().__cat_dim__(key, item) 
-
 class TSGenData(Data):
-    # seeing if works
     # fully connected graph so don't need to specify edge_index
     # assumes max_num_nodes used so constant values for batching
 
@@ -111,129 +91,11 @@ class TSGenDataset(InMemoryDataset):
                                                 ({len(tss)}), products ({len(ps)}) don't match."
 
         geometries = list(zip(rs, tss, ps))
-        data_list = self.process_geometries_3(geometries)
+        data_list = self.process_geometries(geometries)
         torch.save(self.collate(data_list), self.processed_paths[0])
 
-    def process_geometries_1(self, geometries):
+    def process_geometries(self, geometries):
         """Process all geometries in same manner as ts_gen."""
-        
-        data_list = []
-        
-        for rxn_id, rxn in enumerate(tqdm(geometries)):
-
-#            if rxn_id == self.TEMP_MOLS_LIMIT:
-#                break
-
-            r, ts, p = rxn
-            num_atoms = r.GetNumAtoms()
-
-            # dist matrices
-            D = (Chem.GetDistanceMatrix(r) + Chem.GetDistanceMatrix(p)) / 2
-            D[D > self.MAX_D] = self.MAX_D
-            D_3D_rbf = np.exp(-((Chem.Get3DDistanceMatrix(r) + Chem.Get3DDistanceMatrix(p)) / 2))  
-
-            # node feats, edge attr init
-            type_ids, atomic_ns = [], []
-            bonded, aromatic, rbf = [], [], []
-            
-            # ts ground truth coords
-            ts_gt_pos = torch.zeros((num_atoms, self.COORD_DIM))
-            ts_conf = ts.GetConformer()
-
-            for i in range(num_atoms):
-
-                # node feats
-                atom = r.GetAtomWithIdx(i)
-                type_ids.append(self.ELEM_TYPES[atom.GetSymbol()])
-                atomic_ns.append(atom.GetAtomicNum() / 10.)
-
-                # ts coordinates: atom positions as matrix w shape [num_atoms, 3]
-                pos = ts_conf.GetAtomPosition(i)
-                ts_gt_pos[i] = torch.tensor([pos.x, pos.y, pos.z])
-                
-                # edge attrs
-                for j in range(num_atoms):
-                    # if stays bonded
-                    if D[i][j] == 1: 
-                        bonded.append(1)
-                        aromatic.append(1 if r.GetBondBetweenAtoms(i, j).GetIsAromatic() else 0)
-                    else:
-                        bonded.append(0)
-                        aromatic.append(0)
-                    # 3d rbf
-                    rbf.append(D_3D_rbf[i][j])
-            
-            node_feats = torch.tensor([type_ids, atomic_ns], dtype = torch.float).t().contiguous()
-            atomic_ns = torch.tensor(atomic_ns, dtype = torch.long)
-            edge_attr = torch.tensor([bonded, aromatic, rbf], dtype = torch.float).t().contiguous()
-
-            data = TSGenGraph(x = node_feats, z = atomic_ns, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
-            data_list.append(data) 
-
-        return data_list
-
-
-    def process_geometries_2(self, geometries):
-        """Process all geometries in same manner as ts_gen."""
-        
-        data_list = []
-        
-        for rxn_id, rxn in enumerate(tqdm(geometries)):
-
-            if rxn_id == self.TEMP_MOLS_LIMIT:
-                break
-
-            r, ts, p = rxn
-            num_atoms = r.GetNumAtoms()
-
-            # dist matrices
-            D = (Chem.GetDistanceMatrix(r) + Chem.GetDistanceMatrix(p)) / 2
-            D[D > self.MAX_D] = self.MAX_D
-            D_3D_rbf = np.exp(-((Chem.Get3DDistanceMatrix(r) + Chem.Get3DDistanceMatrix(p)) / 2))  
-
-            # node feats, edge attr init
-            type_ids, atomic_ns = [], [] # TODO: init of vec N
-            edge_attr = torch.zeros(self.MAX_NUM_ATOMS, self.MAX_NUM_ATOMS, self.NUM_EDGE_ATTR)
-            
-            # ts ground truth coords
-            ts_gt_pos = torch.zeros((num_atoms, self.COORD_DIM))
-            ts_conf = ts.GetConformer()
-            for i in range(num_atoms):
-
-                # node feats
-                atom = r.GetAtomWithIdx(i)
-                type_ids.append(self.ELEM_TYPES[atom.GetSymbol()])
-                atomic_ns.append(atom.GetAtomicNum() / 10.)
-
-                # ts coordinates: atom positions as matrix w shape [num_atoms, 3]
-                pos = ts_conf.GetAtomPosition(i)
-                ts_gt_pos[i] = torch.tensor([pos.x, pos.y, pos.z])
-                
-                # edge attrs
-                for j in range(num_atoms):
-                    if D[i][j] == 1: # if stays bonded
-                        edge_attr[i][j][0] = 1 # bonded?
-                        if r.GetBondBetweenAtoms(i, j).GetIsAromatic():
-                            edge_attr[i][j][1] = 1 # aromatic?
-                    edge_attr[i][j][2] = D_3D_rbf[i][j] # 3d rbf
-            
-            node_feats = torch.tensor([type_ids, atomic_ns], dtype = torch.float).t().contiguous()
-            atomic_ns = torch.tensor(atomic_ns, dtype = torch.long)
-            print(edge_attr.shape)
-            print()
-            # edge_attr = torch.tensor([bonded, aromatic, rbf], dtype = torch.float).t().contiguous()
-
-            data = TSGenGraph(x = node_feats, z = atomic_ns, pos = ts_gt_pos, edge_attr = edge_attr, idx = rxn_id)
-            data_list.append(data) 
-
-        return data_list
-
-
-    def process_geometries_3(self, geometries):
-        """Process all geometries in same manner as ts_gen."""
-
-        # TODO: add edge_index here then use specific features 
-        # or use mask and replicate them
         
         data_list = []
         

@@ -26,34 +26,33 @@ class GNN(nn.Module):
         # node layers
         self.dv_mlp1 = MLP(h_nf, h_nf, n_layers)
         self.dv_mlp2 = MLP(h_nf, h_nf, n_layers)
-        
-    
-    def forward(self, node_feats, edge_attr, init = True):
+
+    def forward(self, node_feats, edge_attr):
         
         # reshape edge_attr from NxNxEA to N^2xEA for use in mlps, TODO: batch?
         N = len(node_feats)
         edge_attr = edge_attr.view(N**2, self.NUM_EDGE_ATTR)
 
         # init hidden states of nodes and edges
-        if init:
-            node_feats = self.node_mlp(node_feats)
-            edge_attr = self.edge_mlp(edge_attr)
-            # TODO: if not init, then need different dimensions in following mlps here!
+        node_feats = self.node_mlp(node_feats)
+        edge_attr = self.edge_mlp(edge_attr)
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
-        for _ in range(self.num_iterations):
+        for i in range(self.num_iterations):
             edge_attr = self.edge_model(node_feats, edge_attr)
-            node_feats = self.node_model(node_feats, edge_attr)
+            node_feats = self.node_model(node_feats, edge_attr, N)
 
         return node_feats, edge_attr
 
     def edge_model(self, node_feats, edge_attr):
         f = self.pf_layer(node_feats, edge_attr)
-        dE = self.de_mlp(f).view(len(node_feats)**2, self.h_nf) 
+        dE = self.de_mlp(f)
         return edge_attr + dE
 
-    def node_model(self, node_feats, edge_attr):
-        dV = self.dv_mlp1(node_feats) # TODO: they use edge_attr here but causes dim issues
+    def node_model(self, node_feats, edge_attr, N):
+        dV = self.dv_mlp1(edge_attr)
+        dV = dV.view(N, N, self.h_nf)
+        dV = torch.sum(dV, 1)
         dV = self.dv_mlp2(dV)
         return node_feats + dV
 
@@ -62,50 +61,30 @@ class PairFeaturesLayer(nn.Module):
 
     def __init__(self, h_nf, act = nn.ReLU()):
         super(PairFeaturesLayer, self).__init__()
-        
+
         self.h_nf = h_nf
         self.edge_ij_layer = nn.Linear(h_nf, h_nf, bias = True)
-        self.node_i_layer = nn.Linear(h_nf, h_nf, bias = False) # first dim unsqueeze?
-        self.node_j_layer = nn.Linear(h_nf, h_nf, bias = False) # second dim unsqueeze?
+        self.node_i_layer = nn.Linear(h_nf, h_nf, bias = False) 
+        self.node_j_layer = nn.Linear(h_nf, h_nf, bias = False) 
         self.act = act
 
-    def forward1(self, node_feats, edge_attr):
-        # NOTE: don't need to get edge_index of features here as assume fully connected graph
-        # should you make edge attr like fs here?
+    def forward(self, node_feats, edge_attr):
+        # edge_attr dim: N^2xEA
 
 #- Want to get node: (batch x) N x h, edge: (batch x) N x N x h; then add node to each N dim
-#- Run with batch size = 1; batch size =2 to test; set constants to primer numbers so can't broadcast; don't squeeze out the batch dim OR
-#- The way it's done in PyG; FC but dist features
+#- Run with batch size = 1; batch size =2 to test; set constants to prime numbers so can't broadcast
 #- Either way, be careful about which dims expanding when lining up
 
         f_ij = self.edge_ij_layer(edge_attr)
         f_i = self.node_i_layer(node_feats)
         f_j = self.node_j_layer(node_feats)
 
-        num_atoms = f_i.shape[0]
-        assert num_atoms**2 == f_ij.shape[0], "Number of nodes^2 not equal to number of edge attr." 
-        # TODO: sort out when batch_size > 1
-        fi_fj = torch.randn(num_atoms**2, self.h_nf)
-        for i in range(num_atoms):
-            for j in range(num_atoms):
-                fi_fj[i * num_atoms + j] = torch.matmul(f_i[i], f_j[j]) 
-
-        # return self.act(f_ij + f_i + f_j)
-        return 0
-        return self.act(f_ij + fi_fj)
-    
-    def forward(self, node_feats, edge_attr):
-        
-        f_ij = self.edge_ij_layer(edge_attr)
-        f_i = self.node_i_layer(node_feats)
-        f_j = self.node_j_layer(node_feats)
-
+        # unsqueeze for final addition, then squeeze back again
         N = len(node_feats)
         f_ij = f_ij.view(N, N, self.h_nf)
         f_i = torch.unsqueeze(f_i, 0)
         f_j = torch.unsqueeze(f_j, 1)
-
-        return self.act(f_ij + f_i + f_j)
+        return self.act(f_ij + f_i + f_j).view(N**2, self.h_nf) 
 
 
 class MLP(nn.Module):
