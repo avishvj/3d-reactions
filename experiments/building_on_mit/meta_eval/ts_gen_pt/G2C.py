@@ -11,13 +11,9 @@ class G2C(nn.Module):
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
         super(G2C, self).__init__()
 
-        # dims to save
-        h_edge_nf = h_nf
-
         # nn processing
-        self.gnn = GNN(in_node_nf, in_edge_nf, num_iterations, n_node_layers = n_layers, h_node_nf = h_nf, 
-            n_edge_layers = n_layers, h_edge_nf = h_edge_nf)
-        self.dw_layer = DistWeightLayer(in_nf = h_edge_nf, h_nf = h_nf)
+        self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
+        self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf)
         self.recon = ReconstructCoords(max_dims = 21, coord_dims = 3, total_time = 100)
         
         self.to(device)

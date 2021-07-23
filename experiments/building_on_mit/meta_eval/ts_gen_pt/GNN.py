@@ -1,42 +1,37 @@
 import torch
 import torch.nn as nn
-
 from torch_scatter import scatter_sum
 
 # trying a pytorch version of MIT ts_gen: https://github.com/PattanaikL/ts_gen
 
 class GNN(nn.Module):
-    
+
     # constants
     NUM_EDGE_ATTR = 3
 
-    def __init__(self, in_node_nf, in_edge_nf, num_iterations = 3, \
-        n_node_layers = 2, h_node_nf = 100, n_edge_layers = 2, h_edge_nf = 100):
+    def __init__(self, in_node_nf, in_edge_nf, h_nf = 100, n_layers = 2, num_iterations = 3):
         super(GNN, self).__init__()
-        # don't need masks because of PyTG batching
-        
+        self.h_nf = h_nf
+        self.n_layers = n_layers
         self.num_iterations = num_iterations
-        self.h_nf = h_node_nf
 
         # init layers
-        self.node_mlp = MLP(in_node_nf, h_node_nf, n_node_layers)
-        self.edge_mlp = MLP(in_edge_nf, h_edge_nf, n_edge_layers)
+        self.node_mlp = MLP(in_node_nf, h_nf, n_layers)
+        self.edge_mlp = MLP(in_edge_nf, h_nf, n_layers)
         
         # edge layers 
-        h_nf = h_node_nf # TODO: remove node and edge h_nf; they have to be same because add in pf_layer
         self.pf_layer = PairFeaturesLayer(h_nf)
-        self.de_mlp = MLP(h_nf, h_nf, n_edge_layers) 
+        self.de_mlp = MLP(h_nf, h_nf, n_layers) 
 
         # node layers
-        self.dv_mlp1 = MLP(h_nf, h_nf, n_node_layers)
-        self.dv_mlp2 = MLP(h_nf, h_nf, n_node_layers)
+        self.dv_mlp1 = MLP(h_nf, h_nf, n_layers)
+        self.dv_mlp2 = MLP(h_nf, h_nf, n_layers)
         
     
     def forward(self, node_feats, edge_attr, init = True):
-
+        
+        # reshape edge_attr from NxNxEA to N^2xEA for use in mlps, TODO: batch?
         N = len(node_feats)
-
-        # reshape edge_attr from NxNxEA to N^2xEA for use in mlps
         edge_attr = edge_attr.view(N**2, self.NUM_EDGE_ATTR)
 
         # init hidden states of nodes and edges
