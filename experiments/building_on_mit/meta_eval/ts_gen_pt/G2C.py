@@ -6,6 +6,9 @@ from .GNN import GNN, MLP
 
 MAX_N = 21
 COORD_DIMS = 3
+EPS1 = 1e-1
+EPS2 = 1e-2
+EPS3 = 1e-3
 
 class G2C(nn.Module):
     """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen. """
@@ -14,7 +17,7 @@ class G2C(nn.Module):
         super(G2C, self).__init__()
         self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
         self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf)
-        self.recon = ReconstructCoords(max_dims = 21, coord_dims = 3, total_time = 100)
+        self.recon = ReconstructCoords(total_time = 100)
         self.to(device)
 
     def forward(self, node_feats, edge_attr, batch_size):
@@ -23,21 +26,7 @@ class G2C(nn.Module):
         X_pred = self.recon.dist_nlsq(D_init, W, batch_size)        
         return D_init, W, emb, X_pred
 
-    def rmsd1(self, X_pred, X_gt):
-        # from https://github.com/charnley/rmsd
-        diff = X_pred - X_gt
-        num_atoms = len(X_pred)
-        return torch.sqrt((diff * diff).sum() / num_atoms)
-
     def rmsd(self, X_pred, X_gt):
-        # reduce same on X1 and X2
-        # times masks
-        # perturb
-        # matmul perturb
-        # svd on matmul
-        # X1 align
-        # calc rmsd
-
         assert X_pred.shape == X_gt.shape, f"Your coordinate matrices don't match! \
                                             X_pred dim: {X_pred.shape}, X_gt dim: {X_gt.shape}"
 
@@ -46,9 +35,8 @@ class G2C(nn.Module):
         X_gt = X_gt - torch.sum(X_gt, 1, keepdim = True)
         
         # add perturbation
-        eps = 1e-2
-        X_pred_perturb = X_pred + eps * torch.randn(X_pred.shape)
-        X_gt_perturb = X_gt + eps * torch.randn(X_pred.shape)
+        X_pred_perturb = X_pred + EPS2 * torch.randn(X_pred.shape)
+        X_gt_perturb = X_gt + EPS2 * torch.randn(X_pred.shape)
 
         # multiply perturbed and align
         A = torch.matmul(X_gt_perturb.permute(0, 2, 1), X_pred_perturb) 
@@ -58,7 +46,7 @@ class G2C(nn.Module):
 
         # calc metrics
         msd = torch.sum(torch.square(X_pred_align - X_gt), (1, 2))
-        rmsd = torch.mean(torch.sqrt(msd + 1e-3))
+        rmsd = torch.mean(torch.sqrt(msd + EPS3))
         return rmsd, X_pred_align
 
     def clip_gradients(self):
@@ -91,42 +79,17 @@ class DistWeightLayer(nn.Module):
     
 
 class ReconstructCoords:
-    # TODO: remove max_dims as not being used
 
-    def __init__(self, max_dims = 21, coord_dims = 3, total_time = 100):
+    def __init__(self, total_time = 100):
         # simulation constants
-        self.max_dims = max_dims
-        self.coord_dims = coord_dims
         self.total_time = total_time
-
-
-    def distance_to_gram(self, D, mask):
-        """ Convert distance to gram matrix """
-        N_f32 = tf.to_float(self.placeholders["sizes"])
-        D = tf.square(D)
-        D_row = tf.reduce_sum(D, 1, keep_dims=True) \
-            / tf.reshape(N_f32, [-1,1,1])
-        D_col = tf.reduce_sum(D, 2, keep_dims=True) \
-            / tf.reshape(N_f32, [-1,1,1])
-        D_mean = tf.reduce_sum(D, [1,2], keep_dims=True) \
-            / tf.reshape(tf.square(N_f32), [-1,1,1])
-        B = mask * -0.5 * (D - D_row - D_col + D_mean)
-        return B
-
-    def dist_to_gram(self, D):
-        D = torch.square(D)
-        D_row = torch.sum(D, 1, keepdim = True) / MAX_N
-        D_col = torch.sum(D, 2, keepdim = True) / MAX_N
-        D_mean = torch.sum(D, (1, 2), keepdim = True) / MAX_N**2
-        B = -0.5 * (D - D_row - D_col + D_mean)
-        return B
 
     def dist_nlsq(self, D, W, batch_size):
 
         # init
         B = self.dist_to_gram(D) 
         X = self.low_rank_approx_power(B) # want 15x3, currently got 15x15x3
-        X += torch.randn(batch_size, MAX_N, self.coord_dims) # Nx3
+        X += torch.randn(batch_size, MAX_N, COORD_DIMS) # Nx3
 
         # opt loop
         t = 0
@@ -136,12 +99,12 @@ class ReconstructCoords:
         
         return X
     
-    def dist_to_gram1(self, D):
-        N = len(D)
-        D_row = torch.sum(D, 0, keepdim = True) / N
-        D_col = torch.sum(D, 1, keepdim = True) / N
-        D_mean = torch.sum(D, (0, 1), keepdim = True) / N**2
-        B = - 0.5 * (D - D_row - D_col + D_mean)
+    def dist_to_gram(self, D):
+        D = torch.square(D)
+        D_row = torch.sum(D, 1, keepdim = True) / MAX_N
+        D_col = torch.sum(D, 2, keepdim = True) / MAX_N
+        D_mean = torch.sum(D, (1, 2), keepdim = True) / MAX_N**2
+        B = -0.5 * (D - D_row - D_col + D_mean)
         return B
 
     def low_rank_approx_power(self, A, k = 3, num_steps = 10):
@@ -155,12 +118,12 @@ class ReconstructCoords:
 
             # power iteration
             for _ in range(num_steps):
-                u = F.normalize(u, dim = 0, p = 2, eps = 1e-3) # 1 for row, 2 for l2 norm
+                u = F.normalize(u, dim = 0, p = 2, eps = EPS3) # 1 for row, 2 for l2 norm
                 u = torch.matmul(A_lr, u)
             
             # rescale by sqrt(eigenvalue)
             eig_sq = torch.sum(torch.square(u), 1, keepdim = True) 
-            u = u / torch.pow(eig_sq + 1e-2, 0.25)
+            u = u / torch.pow(eig_sq + EPS2, 0.25)
             u_set.append(u)
             A_lr = A_lr - torch.matmul(u, u.permute(0, 2, 1))
         
@@ -169,18 +132,16 @@ class ReconstructCoords:
 
     def step_func(self, t, X_t, D, W):
         # constants
-        tsg_eps1 = 0.1
-        tsg_eps2 = 1e-3
         alpha = 5.0
         alpha_base = 0.1
         T = self.total_time
 
         # init g and dx
         g = self.grad_func(X_t, D, W)[0] # g = tuple(tensor,)[0]
-        dX = - tsg_eps1 * g # dX dim: batch_size x max_N x coord_dims
+        dX = - EPS1 * g # dX dim: batch_size x max_N x coord_dims
 
         # speed clipping (how fast in Angstroms)
-        speed = torch.sqrt(torch.sum(torch.square(dX), 2, keepdim = True) + tsg_eps2)
+        speed = torch.sqrt(torch.sum(torch.square(dX), 2, keepdim = True) + EPS3)
 
         # alpha sets max speed (soft trust region)
         alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
@@ -198,9 +159,8 @@ class ReconstructCoords:
         return g
     
     def get_euc_dist(self, X):
-        tsg_eps = 1e-2
         D_sq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
-        D = torch.sum(D_sq, 3) + tsg_eps
+        D = torch.sum(D_sq, 3) + EPS2
         return D
 
 
