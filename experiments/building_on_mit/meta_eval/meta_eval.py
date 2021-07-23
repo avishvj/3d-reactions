@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import DataLoader
 from ts_vae.data_processors.ts_gen_processor import TSGenDataset
-from experiments.building_on_mit.meta_eval.ts_gen_pt.G2C import G2C, train_g2c
+from experiments.building_on_mit.meta_eval.ts_gen_pt.G2C import G2C, train_g2c_epoch
 from experiments.exp_utils import ExperimentLog
 import numpy as np
 
@@ -64,13 +64,13 @@ def ablation(experiment_params, model_params, loaders):
 
     for epoch in range(1, epochs + 1):
         
-        train_loss, train_epoch_res = train_g2c(g2c, g2c_opt, train_loader, test = False)
+        train_loss, train_epoch_res = train_g2c_epoch(g2c, g2c_opt, train_loader, test = False)
         if epoch == epochs: # only add final epoch res
             train_log.add_epoch_result(train_epoch_res)
         print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
 
         if epoch % test_interval == 0:
-            test_loss, test_epoch_res = train_g2c(g2c, g2c_opt, test_loader, test = True)
+            test_loss, test_epoch_res = train_g2c_epoch(g2c, g2c_opt, test_loader, test = True)
             test_log.add_epoch_result(test_epoch_res)
             print(f"===== Testing epoch {epoch:03d} complete with loss: {test_loss:.4f} ====")
 

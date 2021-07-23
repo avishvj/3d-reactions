@@ -2,20 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
 from .GNN import GNN, MLP
 
-# pytorch port of MIT ts_gen: https://github.com/PattanaikL/ts_gen
-
 class G2C(nn.Module):
+    """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen. """
+
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
         super(G2C, self).__init__()
-
-        # nn processing
         self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
         self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf)
         self.recon = ReconstructCoords(max_dims = 21, coord_dims = 3, total_time = 100)
-        
         self.to(device)
 
     def forward(self, node_feats, edge_attr):
@@ -174,7 +170,7 @@ class ReconstructCoords:
 
 ### train and test functions
 
-def train_g2c(g2c, g2c_opt, loader, test = False):
+def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
         # run model, calc loss, opt with adam and clipped grad
 
         total_loss = 0

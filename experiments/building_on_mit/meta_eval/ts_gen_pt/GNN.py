@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch_scatter import scatter_sum
 
 class GNN(nn.Module):
-    """PyTorch version of MIT's transition state generator https://github.com/PattanaikL/ts_gen. """
+    """PyTorch version of MIT's ts_gen GNN model https://github.com/PattanaikL/ts_gen. """
     NUM_EDGE_ATTR = 3
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf = 100, n_layers = 2, num_iterations = 3):
@@ -81,7 +81,7 @@ class PairFeaturesLayer(nn.Module):
 
 
 class MLP(nn.Module):
-    # TODO: add norm layers?
+    # add norm layers?
 
     def __init__(self, in_nf, out_nf, n_layers, act = nn.ReLU()):
         super(MLP, self).__init__()
