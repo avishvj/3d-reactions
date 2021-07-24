@@ -32,7 +32,7 @@ class TSGenDataset(InMemoryDataset):
     COORD_DIM = 3
     ELEM_TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3}
     NUM_ELEMS = len(ELEM_TYPES)
-    TEMP_MOLS_LIMIT = 100
+    TEMP_MOLS_LIMIT = 1000
     NUM_EDGE_ATTR = 3
     NUM_NODE_FEATS = 5
     MAX_NUM_ATOMS = 21
