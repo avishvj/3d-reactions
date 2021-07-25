@@ -8,7 +8,7 @@ MAX_N = 21
 
 class GNN(nn.Module):
     """PyTorch version of MIT's ts_gen GNN model https://github.com/PattanaikL/ts_gen."""
-
+    
     def __init__(self, in_node_nf, in_edge_nf, h_nf = 100, n_layers = 2, gnn_depth = 3):
         super(GNN, self).__init__()
         self.h_nf = h_nf
@@ -27,16 +27,16 @@ class GNN(nn.Module):
         self.dv_mlp1 = MLP(h_nf, h_nf, n_layers)
         self.dv_mlp2 = MLP(h_nf, h_nf, n_layers)
 
-    def forward(self, node_feats, edge_attr, batch_size):
+    def forward(self, node_feats, edge_attr, batch_size, mask_V, mask_E):
         
         # init hidden states of nodes and edges
-        node_feats = self.node_mlp(node_feats)
-        edge_attr = self.edge_mlp(edge_attr)
+        node_feats = mask_V * self.node_mlp(node_feats)
+        edge_attr = mask_E * self.edge_mlp(edge_attr)
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.gnn_depth):
             edge_attr = self.edge_model(node_feats, edge_attr, batch_size)
-            node_feats = self.node_model(node_feats, edge_attr, batch_size)
+            node_feats = self.node_model(node_feats, edge_attr, batch_size, mask_V)
 
         return node_feats, edge_attr
 
@@ -45,13 +45,13 @@ class GNN(nn.Module):
         dE = self.de_mlp(f)
         return edge_attr + dE
 
-    def node_model(self, node_feats, edge_attr, batch_size):
+    def node_model(self, node_feats, edge_attr, batch_size, mask_V):
         dV = self.dv_mlp1(edge_attr)
         # reshape out from (batch_size * MAX_N**2, h_nf)
         dV = dV.view(batch_size, MAX_N, MAX_N, self.h_nf)
         dV = torch.sum(dV, 2).view(batch_size * MAX_N, self.h_nf)
         dV = self.dv_mlp2(dV)
-        return node_feats + dV
+        return node_feats + mask_V * dV
 
 
 class PairFeaturesLayer(nn.Module):

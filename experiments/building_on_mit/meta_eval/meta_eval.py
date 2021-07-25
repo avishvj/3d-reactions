@@ -78,5 +78,3 @@ def ablation(experiment_params, model_params, loaders):
 
     return train_log, test_log
 
-
-

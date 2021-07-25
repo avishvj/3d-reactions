@@ -14,9 +14,9 @@ MAX_CLIP_NORM = 10
 class G2C(nn.Module):
     """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen.
     Note:
-        - Clip gradients function is not needed since we can call clip gradients in the training func directly.
+        - Clip gradients function is not needed since torch has a built in version which can be called in the training func directly.
         - For edge_attr, we operate on [batch_size * N * N, num_edge_attr] rather than [batch_size x N x N x num_edge_attr]
-          which is why there is some reshaping going on. May be changed later on to be more like the latter.
+          which is why there is some reshaping going on.
     """
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
@@ -26,19 +26,21 @@ class G2C(nn.Module):
         self.recon = ReconstructCoords(total_time = 100)
         self.to(device)
 
-    def forward(self, node_feats, edge_attr, batch_size):
-        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size)
+    def forward(self, node_feats, edge_attr, batch_size, mask_V, mask_E):
+        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size, mask_V, mask_E)
         D_init, W, emb = self.dw_layer(gnn_edge_out, batch_size)
         X_pred = self.recon.dist_nlsq(D_init, W, batch_size)        
         return D_init, W, emb, X_pred
 
-    def rmsd(self, X_pred, X_gt):
+    def rmsd(self, X_pred, X_gt, mask_temp):
         assert X_pred.shape == X_gt.shape, f"Your coordinate matrices don't match! \
                                             X_pred dim: {X_pred.shape}, X_gt dim: {X_gt.shape}"
 
         # sum both Xs along max_nodes dim
-        X_pred = X_pred - torch.sum(X_pred, 1, keepdim = True)
-        X_gt = X_gt - torch.sum(X_gt, 1, keepdim = True)
+        X_pred = X_pred - torch.sum(mask_temp * X_pred, 1, keepdim = True) / torch.sum(mask_temp, 1, keepdim = True)
+        X_gt = X_gt - torch.sum(mask_temp * X_gt, 1, keepdim = True) / torch.sum(mask_temp, 1, keepdim = True)
+        X_pred *= mask_temp
+        X_gt *= mask_temp
         
         # add perturbation
         X_pred_perturb = X_pred + EPS2 * torch.randn(X_pred.shape)
@@ -51,7 +53,7 @@ class G2C(nn.Module):
         X_pred_align = X_pred_align.permute(0, 2, 1)
 
         # calc metrics
-        msd = torch.sum(torch.square(X_pred_align - X_gt), (1, 2))
+        msd = torch.sum(mask_temp * torch.square(X_pred_align - X_gt), (1, 2))  / torch.sum(mask_temp, (1, 2))
         rmsd = torch.mean(torch.sqrt(msd + EPS3))
         return rmsd, X_pred_align
 
@@ -190,10 +192,17 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             batch_size = len(rxn_batch.idx)
             X_gt = rxn_batch.pos.view(batch_size, MAX_N, COORD_DIMS)
 
-            # run batch pass of g2c with params
-            D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size)
+            # masks, not sure if these do anything
+            mask = sequence_mask(rxn_batch.num_atoms, MAX_N, dtype = torch.float32)
+            mask_V = mask.view(batch_size * MAX_N, 1)
+            mask_temp = torch.unsqueeze(mask, 2)
+            mask_E = torch.unsqueeze(mask_temp, 1) * torch.unsqueeze(mask_temp, 2)
+            mask_E = mask_E.view(batch_size * MAX_N * MAX_N, 1)
 
-            batch_loss, _ = g2c.rmsd(X_pred, X_gt)
+            # run batch pass of g2c with params
+            D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E)
+
+            batch_loss, _ = g2c.rmsd(X_pred, X_gt, mask_temp)
             total_loss += batch_loss
 
             if not test:
@@ -208,3 +217,12 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             res_dict['X_pred'].append(X_pred)
 
         return total_loss / batch_id, res_dict
+
+### masks for pytorch port
+
+def sequence_mask(sizes, max_size = 21, dtype = torch.bool):
+    row_vector = torch.arange(0, max_size, 1)
+    matrix = torch.unsqueeze(sizes, dim = -1)
+    mask = row_vector < matrix
+    mask.type(dtype)
+    return mask
