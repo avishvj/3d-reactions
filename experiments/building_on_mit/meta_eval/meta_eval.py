@@ -18,7 +18,8 @@ class TSGen_ExpLog(ExperimentLog):
     def add_epoch_result(self, res):
         self.epoch_ae_results.append(res)
 
-def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 5):
+def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 5, \
+                        h_nf = 100, n_layers = 2, gnn_depth = 3):
     # ablation study:
     # 1) drop recon_layer, train on D_init, need to create D_GT from X_GT
     # 2) loss with coords and/or D
@@ -37,8 +38,7 @@ def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interv
 
     # model and opt, NOTE: edge_attr.size(2)
     in_node_nf, in_edge_nf = train_loader.dataset[0].x.size(1), train_loader.dataset[0].edge_attr.size(1)
-    h_nf, n_layers, num_iterations = 100, 2, 3
-    g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
+    g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers, gnn_depth)
     g2c_opt = torch.optim.Adam(g2c.parameters(), lr = 1e-4)
 
     experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval)

@@ -7,13 +7,13 @@ NUM_EDGE_ATTR = 3
 MAX_N = 21
 
 class GNN(nn.Module):
-    """PyTorch version of MIT's ts_gen GNN model https://github.com/PattanaikL/ts_gen. """
+    """PyTorch version of MIT's ts_gen GNN model https://github.com/PattanaikL/ts_gen."""
 
-    def __init__(self, in_node_nf, in_edge_nf, h_nf = 100, n_layers = 2, num_iterations = 3):
+    def __init__(self, in_node_nf, in_edge_nf, h_nf = 100, n_layers = 2, gnn_depth = 3):
         super(GNN, self).__init__()
         self.h_nf = h_nf
         self.n_layers = n_layers
-        self.num_iterations = num_iterations
+        self.gnn_depth = gnn_depth
 
         # init layers
         self.node_mlp = MLP(in_node_nf, h_nf, n_layers)
@@ -34,7 +34,7 @@ class GNN(nn.Module):
         edge_attr = self.edge_mlp(edge_attr)
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
-        for _ in range(self.num_iterations):
+        for _ in range(self.gnn_depth):
             edge_attr = self.edge_model(node_feats, edge_attr, batch_size)
             node_feats = self.node_model(node_feats, edge_attr, batch_size)
 
