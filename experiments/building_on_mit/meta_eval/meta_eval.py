@@ -18,14 +18,16 @@ class TSGen_ExpLog(ExperimentLog):
     def add_epoch_result(self, res):
         self.epoch_ae_results.append(res)
 
-def ablation_experiment(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 5, \
-                        h_nf = 100, n_layers = 2, gnn_depth = 3):
+def ablation_experiment(tt_split = 0.8, epochs = 20, test_interval = 5, \
+                        batch_size = 5, h_nf = 100, n_layers = 2, gnn_depth = 3):
     # ablation study:
+    # 0) with and without masks
     # 1) drop recon_layer, train on D_init, need to create D_GT from X_GT
     # 2) loss with coords and/or D
     # 3) use recon (a) init (b) opt
     # 4) change W used in pytorch, pull init out
     # 5) add noise to training coords and run NLS for diff D_inits
+    
 
     torch.set_printoptions(precision = 3, sci_mode = False)
 

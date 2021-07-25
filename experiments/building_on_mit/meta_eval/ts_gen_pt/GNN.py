@@ -73,8 +73,8 @@ class PairFeaturesLayer(nn.Module):
 
         # unsqueeze for final addition, then squeeze back again
         f_ij = f_ij.view(batch_size, MAX_N, MAX_N, self.h_nf)
-        f_i = torch.unsqueeze(f_i.view(batch_size, 21, 100), 1)
-        f_j = torch.unsqueeze(f_i.view(batch_size, 21, 100), 2)
+        f_i = torch.unsqueeze(f_i.view(batch_size, MAX_N, self.h_nf), 1)
+        f_j = torch.unsqueeze(f_i.view(batch_size, MAX_N, self.h_nf), 2)
         s = self.act(f_ij + f_i + f_j).view(batch_size * MAX_N**2, self.h_nf) 
         return s
 
