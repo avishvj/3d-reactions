@@ -9,9 +9,15 @@ COORD_DIMS = 3
 EPS1 = 1e-1
 EPS2 = 1e-2
 EPS3 = 1e-3
+MAX_CLIP_NORM = 10
 
 class G2C(nn.Module):
-    """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen. """
+    """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen.
+    Note:
+        - Clip gradients function is not needed since we can call clip gradients in the training func directly.
+        - For edge_attr, we operate on [batch_size * N * N, num_edge_attr] rather than [batch_size x N x N x num_edge_attr]
+          which is why there is some reshaping going on. May be changed later on to be more like the latter.
+    """
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
         super(G2C, self).__init__()
@@ -49,9 +55,6 @@ class G2C(nn.Module):
         rmsd = torch.mean(torch.sqrt(msd + EPS3))
         return rmsd, X_pred_align
 
-    def clip_gradients(self):
-        pass
-
 
 class DistWeightLayer(nn.Module):
     
@@ -78,11 +81,13 @@ class DistWeightLayer(nn.Module):
         return D_init, W, emb
     
 
-class ReconstructCoords:
+class ReconstructCoords(nn.Module):
 
     def __init__(self, total_time = 100):
+        super(ReconstructCoords, self).__init__() # don't think this does anything since not learning alpha_base
         # simulation constants, TODO: move alphas + any other constants
         self.total_time = total_time
+        # self.alpha_base = nn.Parameter(torch.tensor(0.1))
 
     def dist_nlsq(self, D, W, batch_size):
 
@@ -193,6 +198,7 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
 
             if not test:
                 batch_loss.backward()
+                nn.utils.clip_grad_norm_(g2c.parameters(), MAX_CLIP_NORM)
                 g2c_opt.step()
             
             # log batch results
