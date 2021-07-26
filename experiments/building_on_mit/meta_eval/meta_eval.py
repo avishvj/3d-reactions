@@ -38,9 +38,16 @@ def ablation_experiment(tt_split = 0.8, epochs = 20, test_interval = 5, \
     train_loader = DataLoader(rxns[: num_train], batch_size = batch_size)
     test_loader = DataLoader(rxns[num_train: ], batch_size = batch_size)
 
+    # cudafy
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # NOTE
+    #for batch in train_loader:
+    #    batch = batch.to(device)
+    #for batch in test_loader:
+    #    batch = batch.to(device) 
+
     # model and opt, NOTE: edge_attr.size(2)
     in_node_nf, in_edge_nf = train_loader.dataset[0].x.size(1), train_loader.dataset[0].edge_attr.size(1)
-    g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers, gnn_depth)
+    g2c = G2C(in_node_nf, in_edge_nf, h_nf, n_layers, gnn_depth, device)
     g2c_opt = torch.optim.Adam(g2c.parameters(), lr = 1e-4)
 
     experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval)

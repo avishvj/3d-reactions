@@ -20,4 +20,5 @@ spare_code.ipynb
 .ipynb_aml_checkpoints/
 *.amltmp
 *.amltemp
+*.amlignore
 

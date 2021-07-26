@@ -24,6 +24,7 @@ class G2C(nn.Module):
         self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
         self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf)
         self.recon = ReconstructCoords(total_time = 100)
+        self.device = device
         self.to(device)
 
     def forward(self, node_feats, edge_attr, batch_size, mask_V, mask_E):
@@ -180,6 +181,9 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
         res_dict = {'D_init': [], 'W': [], 'emb': [], 'X_pred': []}
 
         for batch_id, rxn_batch in enumerate(loader):
+            
+            # for cuda
+            rxn_batch = rxn_batch.to(g2c.device)
 
             if not test:
                 g2c.train()
@@ -193,7 +197,7 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             X_gt = rxn_batch.pos.view(batch_size, MAX_N, COORD_DIMS)
 
             # masks, not sure if these do anything
-            mask = sequence_mask(rxn_batch.num_atoms, MAX_N, dtype = torch.float32)
+            mask = sequence_mask(rxn_batch.num_atoms, MAX_N, torch.float32, g2c.device)
             mask_V = mask.view(batch_size * MAX_N, 1)
             mask_temp = torch.unsqueeze(mask, 2)
             mask_E = torch.unsqueeze(mask_temp, 1) * torch.unsqueeze(mask_temp, 2)
@@ -220,8 +224,8 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
 
 ### masks for pytorch port
 
-def sequence_mask(sizes, max_size = 21, dtype = torch.bool):
-    row_vector = torch.arange(0, max_size, 1)
+def sequence_mask(sizes, max_size = 21, dtype = torch.bool, device = 'cpu'):
+    row_vector = torch.arange(0, max_size, 1).to(device)
     matrix = torch.unsqueeze(sizes, dim = -1)
     mask = row_vector < matrix
     mask.type(dtype)
