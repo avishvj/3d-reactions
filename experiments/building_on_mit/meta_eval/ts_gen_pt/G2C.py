@@ -22,8 +22,8 @@ class G2C(nn.Module):
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
         super(G2C, self).__init__()
         self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
-        self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf)
-        self.recon = ReconstructCoords(total_time = 100)
+        self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf, device = device)
+        self.recon = ReconstructCoords(total_time = 100, device = device)
         self.device = device
         self.to(device)
 
@@ -44,8 +44,8 @@ class G2C(nn.Module):
         X_gt *= mask_temp
         
         # add perturbation
-        X_pred_perturb = X_pred + EPS2 * torch.randn(X_pred.shape)
-        X_gt_perturb = X_gt + EPS2 * torch.randn(X_pred.shape)
+        X_pred_perturb = X_pred + EPS2 * torch.randn(X_pred.shape).to(self.device)
+        X_gt_perturb = X_gt + EPS2 * torch.randn(X_pred.shape).to(self.device)
 
         # multiply perturbed and align
         A = torch.matmul(X_gt_perturb.permute(0, 2, 1), X_pred_perturb) 
@@ -61,12 +61,13 @@ class G2C(nn.Module):
 
 class DistWeightLayer(nn.Module):
     
-    def __init__(self, in_nf, h_nf, edge_out_nf = 2, n_layers = 1):
+    def __init__(self, in_nf, h_nf, edge_out_nf = 2, n_layers = 1, device = 'cpu'):
         super(DistWeightLayer, self).__init__()
         self.h_nf = h_nf
         self.edge_out_nf = edge_out_nf
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
+        self.device = device
     
     def forward(self, gnn_edge_out, batch_size):
         
@@ -79,25 +80,26 @@ class DistWeightLayer(nn.Module):
         edge_out = edge_out + torch.transpose(edge_out, 2, 1) # symmetrise
         dist_weight_pred = nn.Softplus()(edge_out)
         D_init = dist_weight_pred[:,:,:, 0] # dim = batch_size x max_N x max_N NOTE: ignore constant init of D_init here
-        D_init = D_init * (1 - torch.eye(MAX_N))
+        D_init = D_init * (1 - torch.eye(MAX_N)).to(self.device)
         W = dist_weight_pred[:,:,:, 1]
         return D_init, W, emb
     
 
 class ReconstructCoords(nn.Module):
 
-    def __init__(self, total_time = 100):
+    def __init__(self, total_time = 100, device = 'cpu'):
         super(ReconstructCoords, self).__init__() # don't think this does anything since not learning alpha_base
         # simulation constants, TODO: move alphas + any other constants
         self.total_time = total_time
         # self.alpha_base = nn.Parameter(torch.tensor(0.1))
+        self.device = device
 
     def dist_nlsq(self, D, W, batch_size):
 
         # init
         B = self.dist_to_gram(D) 
         X = self.low_rank_approx_power(B) # want 15x3, currently got 15x15x3
-        X += torch.randn(batch_size, MAX_N, COORD_DIMS) # Nx3
+        X += torch.randn(batch_size, MAX_N, COORD_DIMS).to(self.device) # Nx3
 
         # opt loop
         t = 0
@@ -122,7 +124,7 @@ class ReconstructCoords(nn.Module):
         for _ in range(k):
 
             # init eigenvector
-            u = torch.unsqueeze(torch.randn(A.shape[:-1]), -1) # limits between 0 and 1 unlike tf.rand_normal()
+            u = torch.unsqueeze(torch.randn(A.shape[:-1]), -1).to(self.device) # limits between 0 and 1 unlike tf.rand_normal()
 
             # power iteration
             for _ in range(num_steps):
