@@ -15,13 +15,13 @@ class G2C(nn.Module):
     """PyTorch version of MIT's ts_gen G2C (graph to coordinates) model https://github.com/PattanaikL/ts_gen.
     Note:
         - Clip gradients function is not needed since torch has a built in version which can be called in the training func directly.
-        - For edge_attr, we operate on [batch_size * N * N, num_edge_attr] rather than [batch_size x N x N x num_edge_attr]
+        - For edge_attr, we operate on [batch_size * N * N x num_edge_attr] rather than [batch_size x N x N x num_edge_attr]
           which is why there is some reshaping going on.
     """
 
-    def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, num_iterations = 3, device = 'cpu'):
+    def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, gnn_depth = 3, device = 'cpu'):
         super(G2C, self).__init__()
-        self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, num_iterations)
+        self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, gnn_depth)
         self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf, device = device)
         self.recon = ReconstructCoords(total_time = 100, device = device)
         self.device = device
@@ -199,7 +199,7 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             X_gt = rxn_batch.pos.view(batch_size, MAX_N, COORD_DIMS)
 
             # masks, not sure if these do anything
-            mask = sequence_mask(rxn_batch.num_atoms, MAX_N, torch.float32, g2c.device)
+            mask = sequence_mask(rxn_batch.num_atoms, MAX_N, torch.bool, g2c.device)
             mask_V = mask.view(batch_size * MAX_N, 1)
             mask_temp = torch.unsqueeze(mask, 2)
             mask_E = torch.unsqueeze(mask_temp, 1) * torch.unsqueeze(mask_temp, 2)

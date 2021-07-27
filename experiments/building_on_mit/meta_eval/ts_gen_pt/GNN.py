@@ -35,15 +35,15 @@ class GNN(nn.Module):
 
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.gnn_depth):
-            edge_attr = self.edge_model(node_feats, edge_attr, batch_size)
+            edge_attr = self.edge_model(node_feats, edge_attr, batch_size, mask_E)
             node_feats = self.node_model(node_feats, edge_attr, batch_size, mask_V)
 
         return node_feats, edge_attr
 
-    def edge_model(self, node_feats, edge_attr, batch_size):
+    def edge_model(self, node_feats, edge_attr, batch_size, mask_E):
         f = self.pf_layer(node_feats, edge_attr, batch_size)
         dE = self.de_mlp(f)
-        return edge_attr + dE
+        return edge_attr + mask_E * dE
 
     def node_model(self, node_feats, edge_attr, batch_size, mask_V):
         dV = self.dv_mlp1(edge_attr)
@@ -58,7 +58,6 @@ class PairFeaturesLayer(nn.Module):
 
     def __init__(self, h_nf, act = nn.ReLU()):
         super(PairFeaturesLayer, self).__init__()
-
         self.h_nf = h_nf
         self.edge_ij_layer = nn.Linear(h_nf, h_nf, bias = True)
         self.node_i_layer = nn.Linear(h_nf, h_nf, bias = False) 
@@ -97,9 +96,9 @@ class MLP(nn.Module):
 
         self.num_layers = len(self.layers)
 
-    def forward(self, node_feats):
+    def forward(self, feats):
         for i in range(self.num_layers):
-            node_out = self.layers[i](node_feats)
-        return node_out
+            feats = self.layers[i](feats)
+        return feats
         
 
