@@ -27,10 +27,10 @@ class G2C(nn.Module):
         self.device = device
         self.to(device)
 
-    def forward(self, node_feats, edge_attr, batch_size, mask_V, mask_E):
+    def forward(self, node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D):
         gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size, mask_V, mask_E)
-        D_init, W, emb = self.dw_layer(gnn_edge_out, batch_size)
-        X_pred = self.recon.dist_nlsq(D_init, W, batch_size)        
+        D_init, W, emb = self.dw_layer(gnn_edge_out, batch_size, mask_V, mask_D)
+        X_pred = self.recon.dist_nlsq(D_init, W, batch_size, mask_D)        
         return D_init, W, emb, X_pred
 
     def rmsd(self, X_pred, X_gt, mask_temp):
@@ -69,7 +69,7 @@ class DistWeightLayer(nn.Module):
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
         self.device = device
     
-    def forward(self, gnn_edge_out, batch_size):
+    def forward(self, gnn_edge_out, batch_size, mask_V, mask_D):
         
         # init mlps and embedding
         edge_out = self.edge_mlp1(gnn_edge_out)
@@ -78,9 +78,9 @@ class DistWeightLayer(nn.Module):
 
         # distance weight predictions
         edge_out = edge_out + torch.transpose(edge_out, 2, 1) # symmetrise
-        dist_weight_pred = nn.Softplus()(edge_out)
-        D_init = dist_weight_pred[:,:,:, 0] # dim = batch_size x max_N x max_N NOTE: ignore constant init of D_init here
-        D_init = D_init * (1 - torch.eye(MAX_N)).to(self.device)
+        dist_weight_pred = nn.Softplus()(edge_out) # NOTE: ignore constant init of D_init here
+        D_init = dist_weight_pred[:,:,:, 0] # dim = batch_size x max_N x max_N 
+        D_init = mask_D * D_init * (1 - torch.eye(MAX_N)).to(self.device) # NOTE: using max_N instead of squeezed mask_V
         W = dist_weight_pred[:,:,:, 1]
         return D_init, W, emb
     
@@ -94,10 +94,10 @@ class ReconstructCoords(nn.Module):
         # self.alpha_base = nn.Parameter(torch.tensor(0.1))
         self.device = device
 
-    def dist_nlsq(self, D, W, batch_size):
+    def dist_nlsq(self, D, W, batch_size, mask_D):
 
         # init
-        B = self.dist_to_gram(D) 
+        B = self.dist_to_gram(D, mask_D) 
         X = self.low_rank_approx_power(B) # want 15x3, currently got 15x15x3
         X += torch.randn(batch_size, MAX_N, COORD_DIMS).to(self.device) # Nx3
 
@@ -105,16 +105,16 @@ class ReconstructCoords(nn.Module):
         t = 0
         while t < self.total_time:
             # t -> t+1, x_i -> x_{i+1}
-            t, X = self.step_func(t, X, D, W)
+            t, X = self.step_func(t, X, D, W, mask_D)
         
         return X
     
-    def dist_to_gram(self, D):
+    def dist_to_gram(self, D, mask_D):
         D = torch.square(D)
         D_row = torch.sum(D, 1, keepdim = True) / MAX_N
         D_col = torch.sum(D, 2, keepdim = True) / MAX_N
         D_mean = torch.sum(D, (1, 2), keepdim = True) / MAX_N**2
-        B = -0.5 * (D - D_row - D_col + D_mean)
+        B = mask_D * -0.5 * (D - D_row - D_col + D_mean)
         return B
 
     def low_rank_approx_power(self, A, k = 3, num_steps = 10):
@@ -140,14 +140,14 @@ class ReconstructCoords(nn.Module):
         X = torch.cat(u_set, 2)
         return X
 
-    def step_func(self, t, X_t, D, W):
+    def step_func(self, t, X_t, D, W, mask_D):
         # constants
         alpha = 5.0
         alpha_base = 0.1
         T = self.total_time
 
         # init g and dx
-        g = self.grad_func(X_t, D, W)[0] # g = tuple(tensor,)[0]
+        g = self.grad_func(X_t, D, W, mask_D)[0] # g = tuple(tensor,)[0]
         dX = - EPS1 * g # dX dim: batch_size x max_N x coord_dims
 
         # speed clipping (how fast in Angstroms)
@@ -160,11 +160,12 @@ class ReconstructCoords(nn.Module):
         X_new = X_t + dX # X_new dim: batch_size x max_N x coord_dims
         return t+1, X_new
     
-    def grad_func(self, X_t, D, W):
+    def grad_func(self, X_t, D, W, mask_D):
         # dist -> energy -> grad
         # X_t dim: batch_size x max_N x 3
         D_Xt = self.get_euc_dist(X_t) # D_xt dim: batch_size x max_N x max_N
-        U = torch.sum(torch.sum(W * torch.square(D - D_Xt), (1, 2))) # U dim: scalar
+        U = torch.sum(torch.sum(mask_D * W * torch.square(D - D_Xt), (1, 2))) / torch.sum(mask_D, (1, 2)) # U dim: scalar
+        U = torch.sum(U)
         g = torch.autograd.grad(U, X_t)
         return g
     
@@ -203,10 +204,11 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             mask_V = mask.view(batch_size * MAX_N, 1)
             mask_temp = torch.unsqueeze(mask, 2)
             mask_E = torch.unsqueeze(mask_temp, 1) * torch.unsqueeze(mask_temp, 2)
+            mask_D = torch.squeeze(mask_E, 3)
             mask_E = mask_E.view(batch_size * MAX_N * MAX_N, 1)
 
             # run batch pass of g2c with params
-            D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E)
+            D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D)
 
             batch_loss, _ = g2c.rmsd(X_pred, X_gt, mask_temp)
             total_loss += batch_loss
