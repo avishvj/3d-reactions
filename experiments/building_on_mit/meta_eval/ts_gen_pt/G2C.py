@@ -211,7 +211,7 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D)
 
             batch_loss, _ = g2c.rmsd(X_pred, X_gt, mask_temp)
-            total_loss += batch_loss
+            total_loss += batch_loss.item()
 
             if not test:
                 batch_loss.backward()
@@ -219,10 +219,10 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
                 g2c_opt.step()
             
             # log batch results
-            res_dict['D_init'].append(D_init)
-            res_dict['W'].append(W)
-            res_dict['emb'].append(emb)
-            res_dict['X_pred'].append(X_pred)
+            res_dict['D_init'].append(D_init.detach().cpu().numpy())
+            res_dict['W'].append(W.detach().cpu().numpy())
+            res_dict['emb'].append(emb.detach().cpu().numpy())
+            res_dict['X_pred'].append(X_pred.detach().cpu().numpy())
 
         return total_loss / batch_id, res_dict
 
