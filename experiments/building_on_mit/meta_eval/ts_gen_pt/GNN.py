@@ -93,7 +93,6 @@ class MLP(nn.Module):
                 self.layers.append(nn.Linear(h_nf, h_nf))
             self.layers.append(act)
         self.layers.append(nn.Linear(h_nf, out_nf))
-
         self.num_layers = len(self.layers)
 
     def forward(self, feats):

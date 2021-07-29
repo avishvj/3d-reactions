@@ -17,6 +17,7 @@ class G2C(nn.Module):
         - Clip gradients function is not needed since torch has a built in version which can be called in the training func directly.
         - For edge_attr, we operate on [batch_size * N * N x num_edge_attr] rather than [batch_size x N x N x num_edge_attr]
           which is why there is some reshaping going on.
+        - TODO: check if need to send each layer to device.
     """
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, gnn_depth = 3, device = 'cpu'):
@@ -33,7 +34,7 @@ class G2C(nn.Module):
         X_pred = self.recon.dist_nlsq(D_init, W, batch_size, mask_D)        
         return D_init, W, emb, X_pred
 
-    def rmsd(self, X_pred, X_gt, mask_temp):
+    def loss_rmsd(self, X_pred, X_gt, mask_temp):
         assert X_pred.shape == X_gt.shape, f"Your coordinate matrices don't match! \
                                             X_pred dim: {X_pred.shape}, X_gt dim: {X_gt.shape}"
 
@@ -57,6 +58,13 @@ class G2C(nn.Module):
         msd = torch.sum(mask_temp * torch.square(X_pred_align - X_gt), (1, 2))  / torch.sum(mask_temp, (1, 2))
         rmsd = torch.mean(torch.sqrt(msd + EPS3))
         return rmsd, X_pred_align
+
+    def loss_dist(self, X_pred, X_gt, mask_D):
+        D_pred = mask_D * self.recon.get_euc_dist(X_pred)
+        D_gt = mask_D * self.recon.get_euc_dist(X_gt)
+        loss_dist_all = mask_D * torch.abs(D_pred - D_gt)
+        loss_dist = torch.sum(loss_dist_all) / torch.sum(mask_D)
+        return loss_dist
 
 
 class DistWeightLayer(nn.Module):
@@ -98,7 +106,7 @@ class ReconstructCoords(nn.Module):
 
         # init
         B = self.dist_to_gram(D, mask_D) 
-        X = self.low_rank_approx_power(B) # want 15x3, currently got 15x15x3
+        X = self.low_rank_approx_power(B) # X dim: bxNx3
         X += torch.randn(batch_size, MAX_N, COORD_DIMS).to(self.device) # Nx3
 
         # opt loop
@@ -135,7 +143,7 @@ class ReconstructCoords(nn.Module):
             eig_sq = torch.sum(torch.square(u), 1, keepdim = True) 
             u = u / torch.pow(eig_sq + EPS2, 0.25)
             u_set.append(u)
-            A_lr = A_lr - torch.matmul(u, u.permute(0, 2, 1))
+            A_lr = A_lr - torch.matmul(u, u.permute(0, 2, 1)) # NOTE: double check permute
         
         X = torch.cat(u_set, 2)
         return X
@@ -210,7 +218,8 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             # run batch pass of g2c with params
             D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D)
 
-            batch_loss, _ = g2c.rmsd(X_pred, X_gt, mask_temp)
+            # batch_loss, _ = g2c.loss_rmsd(X_pred, X_gt, mask_temp)
+            batch_loss = g2c.loss_dist(X_pred, X_gt, mask_D)
             total_loss += batch_loss.item()
 
             if not test:
