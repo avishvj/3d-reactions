@@ -82,7 +82,7 @@ class DistWeightLayer(nn.Module):
         self.edge_out_nf = edge_out_nf
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
-        self.d_init_const = nn.Parameter(torch.tensor(-2.5))
+        self.d_init_const = nn.Parameter(torch.tensor(-2.25))
         self.device = device
     
     def forward(self, gnn_edge_out, batch_size, mask_V, mask_D):
