@@ -36,7 +36,7 @@ class GNN(nn.Module):
         # iteratively update edges (pair features, MLP, set final), nodes (MLP, reduce, MLP, set final)
         for _ in range(self.gnn_depth):
             edge_attr = self.edge_model(node_feats, edge_attr, batch_size, mask_E)
-            node_feats = self.node_model(node_feats, edge_attr, batch_size, mask_V)
+            # node_feats = self.node_model(node_feats, edge_attr, batch_size, mask_V)
 
         return node_feats, edge_attr
 
