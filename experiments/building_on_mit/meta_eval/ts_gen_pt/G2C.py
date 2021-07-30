@@ -28,11 +28,16 @@ class G2C(nn.Module):
         self.device = device
         self.to(device)
 
-    def forward(self, node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D):
+    def forward1(self, node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D):
         gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size, mask_V, mask_E)
         D_init, W, emb = self.dw_layer(gnn_edge_out, batch_size, mask_V, mask_D)
         X_pred = self.recon.dist_nlsq(D_init, W, batch_size, mask_D)        
         return D_init, W, emb, X_pred
+    
+    def forward(self, node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D):
+        gnn_node_out, gnn_edge_out = self.gnn(node_feats, edge_attr, batch_size, mask_V, mask_E)
+        D_init, W, emb = self.dw_layer(gnn_edge_out, batch_size, mask_V, mask_D)
+        return D_init, W, emb
 
     def loss_rmsd(self, X_pred, X_gt, mask_temp):
         assert X_pred.shape == X_gt.shape, f"Your coordinate matrices don't match! \
@@ -66,6 +71,14 @@ class G2C(nn.Module):
         loss_dist = torch.sum(loss_dist_all) / torch.sum(mask_D)
         return loss_dist
 
+    def loss_dist_D(self, D_pred, X_gt, mask_D):
+        D_pred = mask_D * D_pred
+        D_gt = mask_D * self.recon.get_euc_dist(X_gt)
+        loss_dist_all = mask_D * torch.abs(D_pred - D_gt)
+        loss_dist = torch.sum(loss_dist_all) / torch.sum(mask_D)
+        return loss_dist
+
+
 
 class DistWeightLayer(nn.Module):
     
@@ -75,19 +88,20 @@ class DistWeightLayer(nn.Module):
         self.edge_out_nf = edge_out_nf
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
-        self.d_init_const = nn.Parameter(torch.tensor(1.5))
+#        self.d_init_const = nn.Parameter(torch.tensor(1.5))
         self.device = device
     
     def forward(self, gnn_edge_out, batch_size, mask_V, mask_D):
         
         # init mlps and embedding
-        edge_out = self.edge_mlp1(gnn_edge_out)
+        edge_out = self.edge_mlp1(gnn_edge_out) # TODO: add constant here to increase diffs?
         emb = torch.sum(edge_out.view(batch_size, MAX_N, MAX_N, self.h_nf), dim = (1, 2))
         edge_out = self.edge_mlp2(edge_out).view(batch_size, MAX_N, MAX_N, self.edge_out_nf) 
 
         # distance weight predictions
-        edge_out = edge_out + torch.transpose(edge_out, 2, 1) # symmetrise
-        D_init = nn.Softplus()(self.d_init_const + edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
+        edge_out = edge_out  + torch.transpose(edge_out, 2, 1) # symmetrise
+#        D_init = nn.Softplus()(self.d_init_const + edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
+        D_init = nn.Softplus()(edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
         D_init = mask_D * D_init * (1 - torch.eye(MAX_N)).to(self.device) # NOTE: using max_N instead of squeezed mask_V
         W = nn.Softplus()(edge_out[:,:,:, 1])
         return D_init, W, emb
@@ -96,10 +110,10 @@ class DistWeightLayer(nn.Module):
 class ReconstructCoords(nn.Module):
 
     def __init__(self, total_time = 100, device = 'cpu'):
-        super(ReconstructCoords, self).__init__() # don't think this does anything since not learning alpha_base
-        # simulation constants, TODO: move alphas + any other constants
+        super(ReconstructCoords, self).__init__() 
+        # simulation constants
         self.total_time = total_time
-        # self.alpha_base = nn.Parameter(torch.tensor(0.1))
+        self.alpha_base = nn.Parameter(torch.tensor(0.1))
         self.device = device
 
     def dist_nlsq(self, D, W, batch_size, mask_D):
@@ -151,7 +165,7 @@ class ReconstructCoords(nn.Module):
     def step_func(self, t, X_t, D, W, mask_D):
         # constants
         alpha = 5.0
-        alpha_base = 0.1
+        # alpha_base = 0.1
         T = self.total_time
 
         # init g and dx
@@ -162,7 +176,7 @@ class ReconstructCoords(nn.Module):
         speed = torch.sqrt(torch.sum(torch.square(dX), 2, keepdim = True) + EPS3)
 
         # alpha sets max speed (soft trust region)
-        alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
+        alpha_t = self.alpha_base + (alpha - self.alpha_base) * ((T - t) / T)
         scale = alpha_t * torch.tanh(speed / alpha_t) / speed
         dX *= scale
         X_new = X_t + dX # X_new dim: batch_size x max_N x coord_dims
@@ -216,10 +230,14 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             mask_E = mask_E.view(batch_size * MAX_N * MAX_N, 1)
 
             # run batch pass of g2c with params
-            D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D)
+#            D_init, W, emb, X_pred = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D)
+#            batch_loss, _ = g2c.loss_rmsd(X_pred, X_gt, mask_temp)
+#            # batch_loss = g2c.loss_dist(X_pred, X_gt, mask_D)
 
-            # batch_loss, _ = g2c.loss_rmsd(X_pred, X_gt, mask_temp)
-            batch_loss = g2c.loss_dist(X_pred, X_gt, mask_D)
+            # D loss
+            D_init, W, emb = g2c(node_feats, edge_attr, batch_size, mask_V, mask_E, mask_D)
+            batch_loss = g2c.loss_dist_D(D_init, X_gt, mask_D)
+
             total_loss += batch_loss.item()
 
             if not test:
@@ -231,7 +249,7 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             res_dict['D_init'].append(D_init.detach().cpu().numpy())
             res_dict['W'].append(W.detach().cpu().numpy())
             res_dict['emb'].append(emb.detach().cpu().numpy())
-            res_dict['X_pred'].append(X_pred.detach().cpu().numpy())
+#            res_dict['X_pred'].append(X_pred.detach().cpu().numpy())
 
         return total_loss / batch_id, res_dict
 
