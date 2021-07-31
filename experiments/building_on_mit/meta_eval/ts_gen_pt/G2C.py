@@ -17,7 +17,6 @@ class G2C(nn.Module):
         - Clip gradients function is not needed since torch has a built in version which can be called in the training func directly.
         - For edge_attr, we operate on [batch_size * N * N x num_edge_attr] rather than [batch_size x N x N x num_edge_attr]
           which is why there is some reshaping going on.
-        - TODO: check if need to send each layer to device.
     """
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf, n_layers = 2, gnn_depth = 3, device = 'cpu'):
@@ -82,7 +81,7 @@ class DistWeightLayer(nn.Module):
         self.edge_out_nf = edge_out_nf
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
         self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
-        self.d_init_const = nn.Parameter(torch.tensor(-2.3))
+        self.d_init_const = nn.Parameter(torch.tensor(-2.5))
         self.device = device
     
     def forward(self, gnn_edge_out, batch_size, mask_V, mask_D):
@@ -93,9 +92,8 @@ class DistWeightLayer(nn.Module):
         edge_out = self.edge_mlp2(edge_out).view(batch_size, MAX_N, MAX_N, self.edge_out_nf) 
 
         # distance weight predictions
-        # edge_out = edge_out  + torch.transpose(edge_out, 2, 1) # symmetrise
+        edge_out = edge_out  + torch.transpose(edge_out, 2, 1) # symmetrise
         D_init = nn.Softplus()(self.d_init_const + edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
-#        D_init = nn.Softplus()(edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
         D_init = mask_D * D_init * (1 - torch.eye(MAX_N)).to(self.device) # NOTE: using max_N instead of squeezed mask_V
         W = nn.Softplus()(edge_out[:,:,:, 1])
         return D_init, W, emb
