@@ -93,7 +93,7 @@ class DistWeightLayer(nn.Module):
         edge_out = self.edge_mlp2(edge_out).view(batch_size, MAX_N, MAX_N, self.edge_out_nf) 
 
         # distance weight predictions
-        edge_out = edge_out  + torch.transpose(edge_out, 2, 1) # symmetrise
+        # edge_out = edge_out  + torch.transpose(edge_out, 2, 1) # symmetrise
         D_init = nn.Softplus()(self.d_init_const + edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
 #        D_init = nn.Softplus()(edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
         D_init = mask_D * D_init * (1 - torch.eye(MAX_N)).to(self.device) # NOTE: using max_N instead of squeezed mask_V
