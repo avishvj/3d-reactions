@@ -52,14 +52,14 @@ class SchNetEncoder(nn.Module):
         # graph update
         self.graph_mlp = Sequential(Linear(h_nf, h_nf // 2), ShiftedSoftplus(), Linear(h_nf // 2, 1))
     
-    def forward(self, atomic_ns, coords, node_batch_vec):
+    def forward(self, atomic_ns, coords, batch_node_vec):
         # == interaction block pass
         
         # create node feats from atom charges
         node_feats = self.init_node_emb(atomic_ns)
         
         # create edge attrs from coordinates
-        edge_index = radius_graph(coords, self.cutoff, node_batch_vec)
+        edge_index = radius_graph(coords, self.cutoff, batch_node_vec)
         node_is, node_js = edge_index
         edge_weights = (coords[node_is] - coords[node_js]).norm(dim = -1)
         edge_attr = self.init_dist_emb(edge_weights) # edge_attr = interatomic dist embs
@@ -68,7 +68,7 @@ class SchNetEncoder(nn.Module):
             edge_attr = self.edge_model(node_feats, edge_weights, edge_attr, node_is)
             node_feats = self.node_model(node_feats, edge_attr, node_js)
     
-        return self.graph_model(node_feats, node_batch_vec)
+        return self.graph_model(node_feats, batch_node_vec)
 
     def node_model(self, node_feats, edge_attr, node_js):
         # schnet diagram: TODO

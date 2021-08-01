@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import Linear, Sequential, Softplus, Parameter
 import numpy as np
 from .GNN import GNN, MLP
 
@@ -23,7 +24,7 @@ class G2C(nn.Module):
         super(G2C, self).__init__()
         self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, gnn_depth)
         self.dw_layer = DistWeightLayer(in_nf = h_nf, h_nf = h_nf, n_layers = n_layers, device = device)
-        self.recon = ReconstructCoords(total_time = 100, device = device)
+        self.recon = ReconstructCoords(total_time = 50, device = device)
         self.device = device
         self.to(device)
 
@@ -80,8 +81,7 @@ class DistWeightLayer(nn.Module):
         self.h_nf = h_nf
         self.edge_out_nf = edge_out_nf
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
-        self.edge_mlp2 = nn.Sequential(nn.Linear(h_nf, edge_out_nf, bias = True), nn.Linear(edge_out_nf, edge_out_nf, bias = True))
-        # self.d_init_const = nn.Parameter(torch.tensor(-2.5))
+        self.edge_mlp2 = Sequential(Linear(h_nf, edge_out_nf, bias = True), Linear(edge_out_nf, edge_out_nf, bias = True))
         self.device = device
     
     def forward(self, gnn_edge_out, batch_size, mask_V, mask_D):
@@ -93,21 +93,20 @@ class DistWeightLayer(nn.Module):
 
         # distance weight predictions
         edge_out = edge_out  + torch.transpose(edge_out, 2, 1) # symmetrise
-        
-        # D_init = nn.Softplus()(self.d_init_const + edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
-        D_init = nn.Softplus()(edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
+        D_init = Softplus()(edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
         D_init = mask_D * D_init * (1 - torch.eye(MAX_N)).to(self.device) # NOTE: using max_N instead of squeezed mask_V
-        W = nn.Softplus()(edge_out[:,:,:, 1])
+        W = Softplus()(edge_out[:,:,:, 1])
+
         return D_init, W, emb
     
 
 class ReconstructCoords(nn.Module):
 
-    def __init__(self, total_time = 100, device = 'cpu'):
+    def __init__(self, total_time, device = 'cpu'):
         super(ReconstructCoords, self).__init__() 
         # simulation constants
         self.total_time = total_time
-        self.alpha_base = nn.Parameter(torch.tensor(0.1))
+        # self.alpha_base = Parameter(torch.tensor(0.1))
         self.device = device
 
     def dist_nlsq(self, D, W, batch_size, mask_D):
@@ -117,11 +116,11 @@ class ReconstructCoords(nn.Module):
         X = self.low_rank_approx_power(B) # X dim: bxNx3       
 
         # opt loop
-#        t = 0
-#        X += torch.randn(batch_size, MAX_N, COORD_DIMS).to(self.device) # Nx3
-#        while t < self.total_time:
-#            # t -> t+1, x_i -> x_{i+1}
-#            t, X = self.step_func(t, X, D, W, mask_D)
+        t = 0
+        X += torch.randn(batch_size, MAX_N, COORD_DIMS).to(self.device) # Nx3
+        while t < self.total_time:
+            # t -> t+1, x_i -> x_{i+1}
+            t, X = self.step_func(t, X, D, W, mask_D)
         
         return X
     
@@ -159,7 +158,7 @@ class ReconstructCoords(nn.Module):
     def step_func(self, t, X_t, D, W, mask_D):
         # constants
         alpha = 5.0
-        # alpha_base = 0.1
+        alpha_base = 0.1
         T = self.total_time
 
         # init g and dx
@@ -170,7 +169,7 @@ class ReconstructCoords(nn.Module):
         speed = torch.sqrt(torch.sum(torch.square(dX), 2, keepdim = True) + EPS3)
 
         # alpha sets max speed (soft trust region)
-        alpha_t = self.alpha_base + (alpha - self.alpha_base) * ((T - t) / T)
+        alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
         scale = alpha_t * torch.tanh(speed / alpha_t) / speed
         dX *= scale
         X_new = X_t + dX # X_new dim: batch_size x max_N x coord_dims
