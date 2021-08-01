@@ -75,13 +75,13 @@ class G2C(nn.Module):
 
 class DistWeightLayer(nn.Module):
     
-    def __init__(self, in_nf, h_nf, n_layers = 1, edge_out_nf = 2, device = 'cpu'):
+    def __init__(self, in_nf, h_nf, n_layers, edge_out_nf = 2, device = 'cpu'):
         super(DistWeightLayer, self).__init__()
         self.h_nf = h_nf
         self.edge_out_nf = edge_out_nf
         self.edge_mlp1 = MLP(in_nf, h_nf, n_layers)
-        self.edge_mlp2 = nn.Linear(h_nf, edge_out_nf, bias = True)
-        self.d_init_const = nn.Parameter(torch.tensor(-2.5))
+        self.edge_mlp2 = nn.Sequential(nn.Linear(h_nf, edge_out_nf, bias = True), nn.Linear(edge_out_nf, edge_out_nf, bias = True))
+        # self.d_init_const = nn.Parameter(torch.tensor(-2.5))
         self.device = device
     
     def forward(self, gnn_edge_out, batch_size, mask_V, mask_D):
@@ -93,7 +93,8 @@ class DistWeightLayer(nn.Module):
 
         # distance weight predictions
         edge_out = edge_out  + torch.transpose(edge_out, 2, 1) # symmetrise
-        D_init = nn.Softplus()(self.d_init_const + edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
+        # D_init = nn.Softplus()(self.d_init_const + edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
+        D_init = nn.Softplus()(edge_out[:,:,:, 0]) # dim = batch_size x max_N x max_N
         D_init = mask_D * D_init * (1 - torch.eye(MAX_N)).to(self.device) # NOTE: using max_N instead of squeezed mask_V
         W = nn.Softplus()(edge_out[:,:,:, 1])
         return D_init, W, emb
