@@ -116,11 +116,11 @@ class ReconstructCoords(nn.Module):
         X = self.low_rank_approx_power(B) # X dim: bxNx3       
 
         # opt loop
-        t = 0
-        X += torch.randn(batch_size, MAX_N, COORD_DIMS).to(self.device) # Nx3
-        while t < self.total_time:
-            # t -> t+1, x_i -> x_{i+1}
-            t, X = self.step_func(t, X, D, W, mask_D)
+#        t = 0
+#        X += torch.randn(batch_size, MAX_N, COORD_DIMS).to(self.device) # Nx3
+#        while t < self.total_time:
+#            # t -> t+1, x_i -> x_{i+1}
+#            t, X = self.step_func(t, X, D, W, mask_D)
         
         return X
     

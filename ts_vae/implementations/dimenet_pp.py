@@ -5,6 +5,7 @@ from torch.nn import Linear, Sequential, Embedding
 from torch.serialization import register_package
 
 from torch_geometric.nn import radius_graph
+from torch_geometric.nn.acts import swish, ReLU
 from torch_scatter import scatter
 from torch_sparse import SparseTensor
 
@@ -14,15 +15,21 @@ from ts_ae.ae import TS_AE
 # pytorch version of dimenet++, adapted from dig and source
 # https://github.com/klicperajo/dimenet/blob/master/dimenet/model/dimenet_pp.py
 
+# NOTE: will have to redo with separate updates for node, edge, graph like 3D MP
 
 class DimeNetPP(nn.Module):
 
-    def __init__(self, cutoff_val, device = 'cpu'):
+    def __init__(self, cutoff_val, envelope_exp, n_spherical, n_radial, device = 'cpu'):
         super(DimeNetPP, self).__init__()
 
         self.cutoff_val = cutoff_val
 
-        # cosine basis function expanstion
+        # edge init
+        # TODO: they have a special initial init for edges but then standard updates for node and graph init
+
+
+        # cosine basis function expansion
+        self.emb = DGEmbedding(cutoff_val, envelope_exp, n_spherical, n_radial)
 
         self.device = device
         self.to(device)
@@ -49,7 +56,10 @@ class DimeNetPP(nn.Module):
 
         dists, angles, node_is, node_js, kj, ji = xyz_to_dg(coords, edge_index, num_nodes)
 
-        emb = self
+        dist_embs, angle_embs = self.emb(dists, angles, kj)
+
+        # init edge, node, graph feats
+        #edge_attr = self.
 
         return
     
@@ -58,6 +68,51 @@ class DimeNetPP(nn.Module):
         # R_i = 
 
         return 
+    
+
+class FeatsInitLayer(nn.Module):
+
+    def __init__(self, n_radial, h_nf, edge_act = swish):
+        super(FeatsInitLayer, self).__init__()
+
+
+        # edge init
+        self.edge_act = edge_act
+        self.emb = Embedding(95, h_nf)
+        self.lin_rbf0 = Linear(n_radial, h_nf)
+        self.lin = Linear(3 * h_nf, h_nf)
+        self.lin_rbf1 = Linear(n_radial, h_nf, bias = False)
+
+        # node init
+        self.node_act = edge_act # TODO: change later
+
+
+
+
+        pass
+
+    def forward(self, coords, embs, node_is, node_js):
+
+        rbf, _ = embs
+        es = self.edge_model(coords, rbf, node_is, node_js)
+
+
+        pass
+    
+    def edge_model(self, coords, rbf, node_is, node_js):
+        x = self.emb(coords)
+        rbf0 = self.act(self.lin_rbf0(rbf))
+        e1 = self.act(self.lin(torch.cat([x[node_is], x[node_js], rbf0], dim=-1)))
+        e2 = self.lin_rbf1(rbf) * e1
+        return e1, e2
+    
+    def node_model(self, es, node_is):
+        _, e2 = es
+        node_feats = scatter(e2, node_is, dim = 0)
+        node_feats = self.lin_up(node_feats)
+        pass
+
+
 
 class DGEmbedding(nn.Module):
     # distance geometry embedding
@@ -74,6 +129,7 @@ class DGEmbedding(nn.Module):
 
         # angle emb
         self.n_spherical = n_spherical
+        # TODO: there are a lot of things here... might be worth importing DIG
     
     def forward(self, dists, angles, kj):
         dist_embs = self.create_dist_embs(dists)
