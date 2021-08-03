@@ -31,13 +31,6 @@ class TSGenArgs:
     optimiser: str = 'adam' 
     lr: float = 1e-3
 
-
-def remove_files():
-    files = glob.glob(r'data/processed/*')
-    for f in files:
-        os.remove(f)
-    print("Files removed.")    
-
 ### logging
 
 def construct_logger_and_dir(log_file_name, log_dir = 'log', exp_dir = None) -> logging.Logger:

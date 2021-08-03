@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from typing import List, Tuple
 import torch.tensor as Tensor
 
-# TODO
-#   - My unique loss functions here?
 
 @dataclass
 class BatchLog:

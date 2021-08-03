@@ -2,8 +2,9 @@ import os, torch, torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn import Linear, Module
 from torch_geometric.utils import to_dense_adj
-from new.utils import save_yaml_file
-from new.model.GNN import GNN, MLP
+
+from experiments.building_on_mit.meta_eval.meta_eval_utils import save_yaml_file
+from experiments.building_on_mit.meta_eval.ts_gen_pt.GNN import GNN, MLP
 
 MAX_N = 21
 COORD_DIMS = 3
