@@ -1,5 +1,13 @@
-## PyTorch port of MIT's ts_gen model https://github.com/PattanaikL/ts_gen
+# PyTorch version sent by Lucky adapted for use here
 
-- Data processing handled in 3d-reactions/ts_vae/data_processors/ts_gen_processor.py.
-- Edge features in MIT model are represented with dim of batch_size x N x N x 3. For easier batching, we represent it as dimensions of batch_size * N * N x 3 and reshape when necessary.
-- Running the model and plotting results is possible via 3d-reactions/ts_gen_port.ipynb. Currently, the plots are not identical to the ts_gen model so something is wrong.
+Code in this directory not to be reproduced or used.
+
+GNN Notes:
+   - BatchNorm1D on MLP
+   - Use Battaglia GNNs MetaLayer for node and edge update --> extend to SphereNet 3D update?
+
+G2C Notes:
+   - Opt parameters need require_grad=True
+
+Other notes:
+   - Data processing handled in 3d-reactions/ts_vae/data_processors/new_ts_gen_processor.py.
