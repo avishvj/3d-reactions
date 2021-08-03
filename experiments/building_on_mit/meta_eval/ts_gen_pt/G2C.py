@@ -3,7 +3,7 @@ from torch.autograd import Variable
 from torch.nn import Linear, Module
 from torch_geometric.utils import to_dense_adj
 
-from experiments.building_on_mit.meta_eval.meta_eval_utils import save_yaml_file
+from experiments.exp_utils import save_yaml_file
 from experiments.building_on_mit.meta_eval.ts_gen_pt.GNN import GNN, MLP
 
 MAX_N = 21

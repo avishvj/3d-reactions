@@ -5,10 +5,11 @@ from rdkit import Chem
 from dataclasses import asdict
 
 from data.data_processors.new_ts_gen_processor import construct_dataset_and_loaders
-from experiments.building_on_mit.meta_eval.meta_eval_utils import construct_logger_and_dir, plot_tt_loss, save_yaml_file
+from experiments.exp_utils import construct_logger_and_dir, plot_tt_loss, save_yaml_file
 from experiments.building_on_mit.meta_eval.ts_gen_pt.G2C import construct_model_opt_loss
 from experiments.building_on_mit.meta_eval.ts_gen_pt.training import train, test
 
+# TODO: ablation study, UQ i.e. stability testing, weights
 
 def experiment(args, plot=False):
 
