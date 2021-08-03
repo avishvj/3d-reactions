@@ -1,26 +1,9 @@
 import torch
-from torch_geometric.data import InMemoryDataset, Data
+from torch_geometric.data import InMemoryDataset, Data, DataLoader
 from rdkit import Chem
 from tqdm import tqdm
-
-
-
-
-
-
-
-
-# make sure same as other workspace
-
-
-
-
-
-
-
-
-
-
+import numpy as np
+from utils import remove_files
 
 
 class TSGenDataset(InMemoryDataset):
@@ -29,17 +12,18 @@ class TSGenDataset(InMemoryDataset):
     COORD_DIM = 3
     ELEM_TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3}
     NUM_ELEMS = len(ELEM_TYPES)
-    TEMP_MOLS_LIMIT = 40
     NUM_EDGE_ATTR = 3
     NUM_NODE_FEATS = 5
     MAX_NUM_ATOMS = 21
 
-    def __init__(self, root_folder, transform = None, pre_transform = None):
+    def __init__(self, root_folder, n_rxns, transform = None, pre_transform = None):
+        self.n_rxns = n_rxns
         super(TSGenDataset, self).__init__(root_folder, transform, pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
         
     @property
     def raw_file_names(self):
+        # having issues accessing this so hacky solution in main process()
         return ['/raw/train_reactants.sdf', '/raw/train_ts.sdf', '/raw/train_products.sdf', 
                 '/raw/test_reactants.sdf', '/raw/test_ts.sdf', '/raw/test_products.sdf']
 
@@ -52,9 +36,7 @@ class TSGenDataset(InMemoryDataset):
         """Not required in this project."""
         pass
     
-
     def process(self):
-        
         sanitise = False
 
         # reactants
@@ -97,7 +79,7 @@ class TSGenDataset(InMemoryDataset):
         
         for rxn_id, rxn in enumerate(tqdm(geometries)):
             
-            if rxn_id == self.TEMP_MOLS_LIMIT:
+            if rxn_id == self.n_rxns:
                 break
 
             r, ts, p = rxn
@@ -136,12 +118,32 @@ class TSGenDataset(InMemoryDataset):
                     f_bonds.append(b2_feats)
                     y.extend([D_ts[i][j], D_ts[j][i]])
 
-            node_feats = torch.tensor(f_atoms, dtype=torch.float)
+            # node_feats = torch.tensor(f_atoms, dtype=torch.float)
             edge_index = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
             edge_attr = torch.tensor(f_bonds, dtype=torch.float)
             y = torch.tensor(y, dtype=torch.float)
 
-            data = Data(x = node_feats, edge_attr = edge_attr, edge_index = edge_index, y = y, idx = rxn_id)
+            data = Data(x = f_atoms, edge_attr = edge_attr, edge_index = edge_index, y = y, idx = rxn_id)
             data_list.append(data) 
         
         return data_list
+
+
+def construct_dataset_and_loaders(args):
+
+    if args.remove_existing_data:
+        remove_files()
+    
+    # build dataset
+    dataset = TSGenDataset(args.root_dir, args.n_rxns)
+    
+    # build loaders using tt_split
+    n_rxns = len(dataset) # as args.n_rxns may be over the limit
+    n_train = int(np.floor(args.tt_split * n_rxns))
+    train_loader = DataLoader(dataset[: n_train], batch_size = args.batch_size, \
+        shuffle = True, num_workers=args.num_workers, pin_memory=True)
+    test_loader = DataLoader(dataset[n_train: ], batch_size = args.batch_size, \
+        shuffle = False, num_workers=args.num_workers, pin_memory=True)
+    
+    return dataset, train_loader, test_loader
+
