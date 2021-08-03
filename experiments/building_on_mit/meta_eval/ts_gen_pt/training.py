@@ -1,17 +1,10 @@
-import math, os
+import math
 from tqdm import tqdm
-import torch, torch.nn as nn
+import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 from torch_geometric.utils import to_dense_adj
 
-from new.utils import construct_logger_and_dir, plot_tt_loss, save_yaml_file
-from new.data_processing.new_processor import construct_dataset_and_loaders
-from new.model.G2C import construct_model_opt_loss
-from dataclasses import asdict
-
 MAX_CLIP_NORM = 10
-
-### model training
 
 def train(model, loader, loss_func, opt, logger):
     total_loss = 0
