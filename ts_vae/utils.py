@@ -32,39 +32,6 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
 
 ### distance geometry funcs
 
-import torch
-from torch_sparse import SparseTensor
-
-def cartesian_to_new(pos, edge_index, num_nodes):
-    # https://github.com/divelab/DIG/blob/dig/dig/threedgraph/utils/geometric_computing.py
-
-    j, i = edge_index
-
-    # dist sqrt(dx^2 + dy^2 + dz^2)
-    dists = (pos[i] - pos[j]).pow(2).sum(dim = -1).sqrt()
-
-    # TODO: pass in device of model
-    value = torch.arange(j.size(0), device = 'cpu')
-    # 
-    adj_t = SparseTensor(row = i, col = j, value = value, sparse_sizes = (num_nodes, num_nodes))
-    adj_t_row = adj_t[j]
-    # num_triplets ... TODO
-
-    # node indices
-    # ...
-
-    # edge indices
-    # ...
-
-    # angles
-    # ...
-
-    # maybe torsion angles
-    # ...
-
-    return
-
-
 import numpy as np
 def interatomic_distance(atom_1, atom_2):
     return np.linalg.norm(atom_1.position - atom_2.position)
