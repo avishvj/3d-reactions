@@ -196,7 +196,7 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
         # run model, calc loss, opt with adam and clipped grad
 
         total_loss = 0
-        res_dict = {'D_init': [], 'W': [], 'emb': [], 'X_pred': []}
+        res_dict = {'D_init': [], 'W': [], 'emb': [], 'D_gt': []}
 
         for batch_id, rxn_batch in enumerate(loader):
             
@@ -242,6 +242,9 @@ def train_g2c_epoch(g2c, g2c_opt, loader, test = False):
             res_dict['D_init'].append(D_init.detach().cpu().numpy())
             res_dict['W'].append(W.detach().cpu().numpy())
             res_dict['emb'].append(emb.detach().cpu().numpy())
+            
+            D_gt = mask_D * g2c.recon.get_euc_dist(X_gt)
+            res_dict['D_gt'].append(D_gt.detach().cpu().numpy())
 #            res_dict['X_pred'].append(X_pred.detach().cpu().numpy())
 
         return total_loss / batch_id, res_dict

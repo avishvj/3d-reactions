@@ -3,6 +3,26 @@ from torch_geometric.data import InMemoryDataset, Data
 from rdkit import Chem
 from tqdm import tqdm
 
+
+
+
+
+
+
+
+# make sure same as other workspace
+
+
+
+
+
+
+
+
+
+
+
+
 class TSGenDataset(InMemoryDataset):
     """Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product)."""
     MAX_D = 10.

@@ -113,8 +113,11 @@ class TSGenDataset(InMemoryDataset):
             # node feats, edge attr, ts gt coords init
             node_feats = torch.zeros(self.MAX_NUM_ATOMS, self.NUM_NODE_FEATS, dtype = torch.float)
             edge_attr = torch.zeros(self.MAX_NUM_ATOMS, self.MAX_NUM_ATOMS, self.NUM_EDGE_ATTR)
-            ts_gt_pos = torch.zeros((self.MAX_NUM_ATOMS, self.COORD_DIM))
-            ts_conf = ts.GetConformer()
+            # ts_gt_pos = torch.zeros((self.MAX_NUM_ATOMS, self.COORD_DIM)) # TODO: this ends up being v wrong
+            ts_coords = []
+            D_ts = Chem.Get3DDistanceMatrix(ts)
+            
+            # ts_conf = ts.GetConformer()
             
             for i in range(num_atoms):
 
@@ -125,8 +128,8 @@ class TSGenDataset(InMemoryDataset):
                 node_feats[i][self.NUM_ELEMS] = atom.GetAtomicNum() / 10.
 
                 # ts coordinates: atom positions as matrix w shape [num_atoms, 3]
-                pos = ts_conf.GetAtomPosition(i)
-                ts_gt_pos[i] = torch.tensor([pos.x, pos.y, pos.z])
+                # pos = ts_conf.GetAtomPosition(i)
+                # ts_gt_pos[i] = torch.tensor([pos.x, pos.y, pos.z])
                 
                 # edge attrs
                 for j in range(num_atoms):
@@ -136,8 +139,11 @@ class TSGenDataset(InMemoryDataset):
                             edge_attr[i][j][1] = 1 # aromatic?
                     edge_attr[i][j][2] = D_3D_rbf[i][j] # 3d rbf
 
+                    ts_coords.extend([D_ts[i][j], D_ts[j][i]])
+
             edge_attr = edge_attr.view(self.MAX_NUM_ATOMS**2, self.NUM_EDGE_ATTR) # 3d to 2d to make batching easier
-            data = TSGenData(x = node_feats, pos = ts_gt_pos, edge_attr = edge_attr, num_atoms = num_atoms, idx = rxn_id)
+            y = torch.tensor(y, dtype=torch.float)
+            data = TSGenData(x = node_feats, pos = ts_coords, edge_attr = edge_attr, num_atoms = num_atoms, idx = rxn_id)
             data_list.append(data) 
 
         return data_list
