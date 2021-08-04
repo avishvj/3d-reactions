@@ -1,10 +1,7 @@
 import torch
-from torch_geometric.data import InMemoryDataset, Data, DataLoader
+from torch_geometric.data import InMemoryDataset, Data
 from rdkit import Chem
 from tqdm import tqdm
-import numpy as np
-from data.data_utils import remove_processed_data
-
 
 class TSGenDataset(InMemoryDataset):
     """Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product)."""
@@ -127,23 +124,4 @@ class TSGenDataset(InMemoryDataset):
             data_list.append(data) 
         
         return data_list
-
-
-def construct_dataset_and_loaders(args):
-
-    if args.remove_existing_data:
-        remove_processed_data()
-    
-    # build dataset
-    dataset = TSGenDataset(args.root_dir, args.n_rxns)
-    
-    # build loaders using tt_split
-    n_rxns = len(dataset) # as args.n_rxns may be over the limit
-    n_train = int(np.floor(args.tt_split * n_rxns))
-    train_loader = DataLoader(dataset[: n_train], batch_size = args.batch_size, \
-        shuffle = True, num_workers=args.num_workers, pin_memory=True)
-    test_loader = DataLoader(dataset[n_train: ], batch_size = args.batch_size, \
-        shuffle = False, num_workers=args.num_workers, pin_memory=True)
-    
-    return dataset, train_loader, test_loader
 

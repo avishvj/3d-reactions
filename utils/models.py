@@ -1,3 +1,6 @@
+import torch
+import numpy as np
+
 def reset(nn):
     def _reset(item):
         if hasattr(item, 'reset_parameters'):
@@ -10,17 +13,6 @@ def reset(nn):
         else:
             _reset(nn)
 
-### remove processed files
-
-import os
-import glob
-
-def remove_files():
-    files = glob.glob(r'data/processed/*')
-    for f in files:
-        os.remove(f)
-    print("Files removed.")    
-
 ### aggregation funcs
 
 def unsorted_segment_sum(edge_attr, row, num_segments):
@@ -32,7 +24,6 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
 
 ### distance geometry funcs
 
-import numpy as np
 def interatomic_distance(atom_1, atom_2):
     return np.linalg.norm(atom_1.position - atom_2.position)
 
@@ -44,20 +35,6 @@ def interatomic_distance_matrix_initialise(mol):
             # create triangular matrix
             matrix[i, j] = 1e3 # max_dist
             matrix[j, i] = 1e-3 # min dist
-
-
-def sparse_to_dense_adj(num_nodes, edge_index):
-    # TODO: pyg to_dense_adj() returns same but with added singleton dim 
-    # i.e. pyg: [1, num_nodes, num_nodes]; this: [num_nodes, num_nodes]
-    # think pyg method can also factor in edge_attr
-
-    # edge_index is sparse_adj matrix (given in coo format for graph connectivity)
-    sparse_adj = torch.cat([edge_index[0].unsqueeze(0), edge_index[1].unsqueeze(0)])
-    # the values we put in at each tuple; that's why length of sparse_adj
-    ones = torch.ones(sparse_adj.size(1)) 
-    # FloatTensor() creates sparse coo tensor in torch format, then to_dense()
-    dense_adj = torch.sparse.FloatTensor(sparse_adj, ones, torch.Size([num_nodes, num_nodes])).to_dense() # to_dense adds the zeroes needed
-    return dense_adj
 
 ### eval funcs
 
