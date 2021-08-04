@@ -9,8 +9,8 @@ log/*
 runs/*
 
 # for now while prototyping
-data/*
-spare_code.ipynb
+data/raw/*
+data/processed/*
 
 # experiments
 *figs*
