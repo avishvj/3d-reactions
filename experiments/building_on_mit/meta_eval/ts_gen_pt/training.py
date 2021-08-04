@@ -18,11 +18,12 @@ def train(model, loader, loss_func, opt, logger):
         D_gt = to_dense_adj(rxn_batch.edge_index, rxn_batch.batch, rxn_batch.y)
         
         batch_loss = loss_func(D_pred, D_gt) / mask.sum()
+        batch_loss.backward()
         clip_grad_norm_(model.parameters(), MAX_CLIP_NORM) # clip gradients
-        if logger:
-            pnorm = compute_parameters_norm(model)
-            gnorm = compute_gradients_norm(model)
-            logger.info(f' Batch {batch_id} Loss: {batch_loss.item()}\t Parameter Norm: {pnorm}\t Gradient Norm: {gnorm}')
+#        if logger:
+#            pnorm = compute_parameters_norm(model)
+#            gnorm = compute_gradients_norm(model)
+#            logger.info(f' Batch {batch_id} Loss: {batch_loss.item()}\t Parameter Norm: {pnorm}\t Gradient Norm: {gnorm}')
         opt.step()
         total_loss += batch_loss.item()
     

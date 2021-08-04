@@ -1,3 +1,0 @@
-[submodule "experiments/building_on_mit/meta_eval/ts_gen"]
-	path = experiments/building_on_mit/meta_eval/ts_gen
-	url = https://github.com/avishvj/ts_gen

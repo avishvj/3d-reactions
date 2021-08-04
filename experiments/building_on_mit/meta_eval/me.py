@@ -17,7 +17,7 @@ def experiment(args, plot=False):
     torch.set_printoptions(precision = 3, sci_mode = False)
     log_file_name = 'train'
     logger, full_log_dir = construct_logger_and_dir(log_file_name, args.log_dir)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # LP: cuda or AV: cuda:0
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') # LP: cuda or AV: cuda:0
     args.device = device
 
     # save experiment params in yaml file, NOTE: model params also saved in construct_model_opt_loss()
@@ -28,10 +28,10 @@ def experiment(args, plot=False):
     dataset, train_loader, test_loader = construct_dataset_and_loaders(args)
     g2c, g2c_opt, loss_func = construct_model_opt_loss(dataset, args, full_log_dir, device)
     
-    # multi gpu training, NOTE: idk if my GPUs have ability for this
-    if torch.cuda.device_count() > 1:
-        logger.info(f'Using {torch.cuda.device_count()} GPUs for training...')
-        g2c = torch.nn.DataParallel(g2c)
+    # multi gpu training, TODO
+    #if torch.cuda.device_count() > 1:
+    #    logger.info(f'Using {torch.cuda.device_count()} GPUs for training...')
+    #    g2c = torch.nn.DataParallel(g2c)
 
     # training
     best_test_loss = math.inf
