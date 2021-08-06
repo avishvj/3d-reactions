@@ -14,11 +14,11 @@ class TSGenArgs:
     
     # data params
     n_rxns: int = 8000 # if over limit, takes max possible ~7600
-    tt_split: float = 0.889 # to return 842 like MIT
-    batch_size: int = 8
+    tt_split: float = 0.889 # to return 842 test like MIT
+    batch_size: int = 8 # default set to best MIT model params
     
-    # model params
-    h_nf: int = 32
+    # model params, default set to best MIT model params
+    h_nf: int = 256
     gnn_depth: int = 3
     n_layers: int = 2
 

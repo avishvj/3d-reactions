@@ -1,0 +1,13 @@
+Starting training...
+Epoch 1: Training Loss 0.1923265730830423
+Epoch 2: Training Loss 0.18165370052851093
+Epoch 3: Training Loss 0.17599386739960818
+Epoch 4: Training Loss 0.18099215015680056
+Epoch 5: Training Loss 0.1769572429731685
+Epoch 6: Training Loss 0.17688411495213788
+Epoch 7: Training Loss 0.17558427321809078
+Epoch 8: Training Loss 0.17949294046211012
+Epoch 9: Training Loss 0.17567578145984247
+Epoch 10: Training Loss 0.17369800343772263
+Epoch 10: Test Loss 0.22809786967273987
+Best Test Loss 0.22809786967273987 on Epoch 10

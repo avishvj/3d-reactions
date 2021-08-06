@@ -66,4 +66,4 @@ def plot_tt_loss(log_file, save_fig = False):
     ax.legend()
 
     if save_fig:
-        fig.savefig(os.path.join(os.path.dirname(log_file), 'tt_loss.pdf'), bbox_inches='tight')
+        fig.savefig(os.path.join(os.path.dirname(log_file), 'tt_loss.png'), bbox_inches='tight')

@@ -1,0 +1,8 @@
+device: !!python/object/apply:torch.device
+- cuda
+- 0
+gnn_depth: 3
+h_nf: 32
+in_edge_nf: 2
+in_node_nf: 5
+n_layers: 2
