@@ -18,6 +18,8 @@ def experiment(args, plot=False):
     log_file_name = 'train'
     logger, full_log_dir = construct_logger_and_dir(log_file_name, args.log_dir)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') # LP: cuda or AV: cuda:0
+    args.log_dir = full_log_dir
+    args.log_file_name = log_file_name + '.log'
     args.device = device
 
     # save experiment params in yaml file, NOTE: model params also saved in construct_model_opt_loss()
@@ -26,7 +28,7 @@ def experiment(args, plot=False):
 
     # data and model
     dataset, train_loader, test_loader = construct_dataset_and_loaders(args)
-    g2c, g2c_opt, loss_func = construct_model_opt_loss(dataset, args, full_log_dir, device)
+    g2c, g2c_opt, loss_func = construct_model_opt_loss(dataset, args, device)
     
     # multi gpu training, TODO
     #if torch.cuda.device_count() > 1:

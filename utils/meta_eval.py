@@ -9,6 +9,7 @@ class TSGenArgs:
     # logistics params
     root_dir: str = r'data'
     log_dir: str = r'log'
+    log_file_name: str = r'train'
     verbose: bool = True
     remove_existing_data: bool = False
     

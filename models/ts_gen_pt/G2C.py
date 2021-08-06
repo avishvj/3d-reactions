@@ -214,7 +214,7 @@ class G2C(Module):
         return D
 
 
-def construct_model_opt_loss(dataset, args, full_log_dir, device):
+def construct_model_opt_loss(dataset, args, device):
     # constructs model, optimiser, loss function + saves model params
     # TODO: scheduler here
 
@@ -237,7 +237,7 @@ def construct_model_opt_loss(dataset, args, full_log_dir, device):
     else:
         raise NotImplementedError(f"Loss function string is invalid. You entered '{args.loss}', please select from TODO")
     
-    yaml_file_name = os.path.join(full_log_dir, 'model_parameters.yml')
+    yaml_file_name = os.path.join(args.log_dir, 'model_parameters.yml')
     save_yaml_file(yaml_file_name, g2c_parameters)
 
     return g2c, g2c_opt, loss_func

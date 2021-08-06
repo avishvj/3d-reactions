@@ -1,0 +1,4 @@
+Starting training...
+Epoch 1: Training Loss 0.19764660174436946
+Epoch 1: Test Loss 0.2331895829559023
+Best Test Loss 0.2331895829559023 on Epoch 1
