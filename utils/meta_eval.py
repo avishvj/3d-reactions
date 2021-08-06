@@ -125,5 +125,25 @@ def plot_ds(ds_dict, no_print=[], save_fig_name=None):
     if save_fig_name:
         plt.savefig(f'{save_fig_name}.png', bbox_inches='tight')
 
+NUM_STD_DS = 3
+
+def ensemble_plot(ds_dict, ds_not_to_print, print_my_ds = False):
+    num_my_ds = len(ds_dict) - NUM_STD_DS
+    ens_ds = []
+    for i in range(len(ds_dict['mit'][0])):
+        ens_d = 0
+        for j in range(0, num_my_ds):
+            ens_d += ds_dict[f'D_init{j}'][0][i]
+        ens_d /= num_my_ds
+        ens_ds.append(ens_d)
+    ds_dict['ens'] = (ens_ds, "Avg Ensemble D_init")
+
+    if not print_my_ds:
+        for j in range(0, num_my_ds):
+            ds_not_to_print.append(f'D_init{j}')
+
+    plot_ds(ds_dict, ds_not_to_print, None)
+
+
 def all_same(items):
     return all(x == items[0] for x in items)
