@@ -10,4 +10,4 @@ G2C Notes:
    - Opt parameters need require_grad=True
 
 Other notes:
-   - Data processing handled in 3d-reactions/ts_vae/data_processors/new_ts_gen_processor.py.
+   - Data processing handled in 3d-reactions/data/data_processors/ts_gen_processor.py.

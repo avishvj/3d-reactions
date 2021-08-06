@@ -1,6 +1,6 @@
 import glob, os, numpy as np
 from torch_geometric.data import DataLoader
-from data.data_processors.new_ts_gen_processor import TSGenDataset
+from data.data_processors.ts_gen_processor import TSGenDataset
 
 def construct_dataset_and_loaders(args):
 
