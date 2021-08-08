@@ -1,6 +1,8 @@
 import numpy as np, matplotlib.pyplot as plt, seaborn as sns
 from rdkit import Chem
 from dataclasses import dataclass
+from typing import List
+import torch.Tensor as Tensor
 
 @dataclass
 class TSGenArgs:
@@ -31,7 +33,21 @@ class TSGenArgs:
     optimiser: str = 'adam' 
     lr: float = 1e-3
 
+@dataclass
+class TestLog:
+
+    # store batch log of these during test run 
+    # func to recover values in list of 842
+
+    # TODO: maybe tensor?
+    D_init: List[Tensor] 
+    W: List[Tensor]
+    emb: List[Tensor]
+
 # recording d_inits
+
+def all_same(items):
+    return all(x == items[0] for x in items)
 
 def save_d(file_name, all_test_res, d_folder='d_inits/'):
     # create and save D_init of [num_train, 21, 21] for plotting
@@ -143,7 +159,3 @@ def ensemble_plot(ds_dict, ds_not_to_print, print_my_ds = False):
             ds_not_to_print.append(f'D_init{j}')
 
     plot_ds(ds_dict, ds_not_to_print, None)
-
-
-def all_same(items):
-    return all(x == items[0] for x in items)
