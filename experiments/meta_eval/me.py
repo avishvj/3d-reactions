@@ -6,6 +6,7 @@ from dataclasses import asdict
 
 from utils.data import construct_dataset_and_loaders
 from utils.exp import construct_logger_and_dir, plot_tt_loss, save_yaml_file
+from utils.meta_eval import ExpLog
 from models.ts_gen_pt.G2C import construct_model_opt_loss
 from models.ts_gen_pt.training import train, test
 
@@ -38,7 +39,7 @@ def experiment(args, plot=False):
     # training
     best_test_loss = math.inf
     best_epoch = 0
-    all_test_res = []
+    exp_log = ExpLog(args)
     
     logger.info("Starting training...")
     for epoch in range(1, args.n_epochs + 1):
@@ -46,17 +47,17 @@ def experiment(args, plot=False):
         logger.info("Epoch {}: Training Loss {}".format(epoch, train_loss))
 
         if epoch % args.test_interval == 0:
-            test_loss, test_res = test(g2c, test_loader, loss_func, full_log_dir)
+            test_loss, test_log = test(g2c, test_loader, loss_func)
             logger.info("Epoch {}: Test Loss {}".format(epoch, test_loss))       
             if test_loss <= best_test_loss:
                 best_test_loss = test_loss
                 best_epoch = epoch
                 torch.save(g2c.state_dict(), os.path.join(full_log_dir, 'best_model.pt'))
-            all_test_res.append(test_res)
+            exp_log.add_test_log(test_log)
     
     logger.info("Best Test Loss {} on Epoch {}".format(best_test_loss, best_epoch))
     log_file = os.path.join(full_log_dir, log_file_name + '.log')
     if plot:
         plot_tt_loss(log_file)
 
-    return all_test_res 
+    return exp_log

@@ -1,8 +1,7 @@
 import numpy as np, matplotlib.pyplot as plt, seaborn as sns
 from rdkit import Chem
-from dataclasses import dataclass
-from typing import List
-import torch.Tensor as Tensor
+from dataclasses import dataclass, field
+from typing import List, Dict
 
 @dataclass
 class TSGenArgs:
@@ -33,28 +32,41 @@ class TSGenArgs:
     optimiser: str = 'adam' 
     lr: float = 1e-3
 
-@dataclass
+
+class ExpLog:
+    def __init__(self, args, test_logs=[]):
+        self.args = args
+        self.test_logs = test_logs
+
+    def add_test_log(self, test_log):
+        self.test_logs = test_log
+    
+    def save_Ds(self, file_name, save_to_log_dir = False, D_folder='experiments/meta_eval/d_inits/'):
+        test_Ds = self.test_logs.Ds[-1] # dim = num_test_rxns x 21 x 21
+        # assert len(test_Ds) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ds)}."
+        np.save(D_folder + file_name, test_Ds)
+        if save_to_log_dir:
+            np.save(self.args.log_dir + 'D', test_Ds)
+
 class TestLog:
+    def __init__(self, Ds = [], Ws = [], embs = []):
+        self.Ds = Ds
+        self.Ws = Ws
+        self.embs = embs
+    
+    def add_D(self, D):
+        self.Ds.append(D)
+    
+    def add_W(self, W):
+        self.Ws.append(W)
 
-    # store batch log of these during test run 
-    # func to recover values in list of 842
-
-    # TODO: maybe tensor?
-    D_init: List[Tensor] 
-    W: List[Tensor]
-    emb: List[Tensor]
+    def add_emb(self, emb):
+        self.embs.append(emb)
 
 # recording d_inits
 
 def all_same(items):
     return all(x == items[0] for x in items)
-
-def save_d(file_name, all_test_res, d_folder='d_inits/'):
-    # create and save D_init of [num_train, 21, 21] for plotting
-    batched_test_Ds = all_test_res[-1]['D_pred'] 
-    test_Ds = np.concatenate([D for D in batched_test_Ds], 0) # expand along batches
-    assert len(test_Ds) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ds)}."
-    np.save(d_folder + file_name, test_Ds)
 
 def create_ds_dict(d_files, d_folder='d_inits/', mols_folder=r'data/raw/'):
     # base_folder is where the test mol sdf files are

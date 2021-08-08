@@ -3,6 +3,7 @@ from tqdm import tqdm
 import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 from torch_geometric.utils import to_dense_adj
+from utils.meta_eval import TestLog
 
 MAX_CLIP_NORM = 10
 
@@ -31,10 +32,10 @@ def train(model, loader, loss_func, opt, logger):
     return RMSE
 
 
-def test(model, loader, loss_func, log_dir):
+def test(model, loader, loss_func):
     total_loss = 0
     model.eval()
-    res_dict = {'D_pred': []} # TODO: add directly into .npy file? using log_dir?
+    test_log = TestLog() 
     
     for batch_id, rxn_batch in tqdm(enumerate(loader)):
         rxn_batch = rxn_batch.to(model.device)
@@ -43,10 +44,10 @@ def test(model, loader, loss_func, log_dir):
         
         batch_loss = loss_func(D_pred, D_gt)  / mask.sum()
         total_loss += batch_loss.item()
-        res_dict['D_pred'].append(D_pred.detach().cpu().numpy())
+        test_log.add_D(D_pred.detach().cpu().numpy())
     
     RMSE = math.sqrt(total_loss / len(loader.dataset))
-    return RMSE, res_dict
+    return RMSE, test_log
 
 
 def compute_parameters_norm(model: nn.Module) -> float:
