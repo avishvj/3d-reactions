@@ -15,7 +15,7 @@ def train(model, loader, loss_func, opt, logger):
         
         opt.zero_grad()
         rxn_batch = rxn_batch.to(model.device)
-        D_pred, mask = model(rxn_batch)
+        D_pred, mask, _ = model(rxn_batch)
         D_gt = to_dense_adj(rxn_batch.edge_index, rxn_batch.batch, rxn_batch.y)
         
         batch_loss = loss_func(D_pred, D_gt) / mask.sum()
@@ -39,12 +39,13 @@ def test(model, loader, loss_func):
     
     for batch_id, rxn_batch in tqdm(enumerate(loader)):
         rxn_batch = rxn_batch.to(model.device)
-        D_pred, mask = model(rxn_batch) 
+        D_pred, mask, W = model(rxn_batch) 
         D_gt = to_dense_adj(rxn_batch.edge_index, rxn_batch.batch, rxn_batch.y)
         
         batch_loss = loss_func(D_pred, D_gt)  / mask.sum()
         total_loss += batch_loss.item()
         test_log.add_D(D_pred.detach().cpu().numpy())
+        test_log.add_W(W.detach().cpu().numpy())
     
     RMSE = math.sqrt(total_loss / len(loader.dataset))
     return RMSE, test_log

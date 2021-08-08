@@ -12,7 +12,7 @@ from models.ts_gen_pt.training import train, test
 
 # TODO: ablation study, UQ i.e. stability testing, weights
 
-def experiment(args, plot=False):
+def experiment(args):
 
     # construct logger, exp directory, and set device
     torch.set_printoptions(precision = 3, sci_mode = False)
@@ -54,10 +54,8 @@ def experiment(args, plot=False):
                 best_epoch = epoch
                 torch.save(g2c.state_dict(), os.path.join(full_log_dir, 'best_model.pt'))
             exp_log.add_test_log(test_log)
-    
+
     logger.info("Best Test Loss {} on Epoch {}".format(best_test_loss, best_epoch))
-    log_file = os.path.join(full_log_dir, log_file_name + '.log')
-    if plot:
-        plot_tt_loss(log_file)
+    exp_log.completed = True
 
     return exp_log

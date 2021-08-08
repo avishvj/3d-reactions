@@ -28,8 +28,6 @@ class G2C(Module):
     def forward(self, batch):
         # torch.autograd.set_detect_anomaly(True)   # use only when debugging
 
-        # print(batch.__dict__)
-
         # create distance and weight matrices predictions
         _, edge_attr = self.gnn(batch.x, batch.edge_index, batch.edge_attr)
         edge_emb = self.edge_mlp(edge_attr)
@@ -42,7 +40,7 @@ class G2C(Module):
         dw_pred = self.act(self.d_init + dw_pred) * diag_mask.unsqueeze(-1)
         D, W = dw_pred.split(1, dim=-1)
 
-        # return diag_mask * D.squeeze(-1), diag_mask
+        # return diag_mask * D.squeeze(-1), diag_mask # to remove opt
         
         # TODO what is this for?
         n_fill = torch.cat([torch.arange(x) for x in batch.batch.bincount()]) 
@@ -53,85 +51,9 @@ class G2C(Module):
         X_pred = self.dist_nlsq(D.squeeze(-1), W.squeeze(-1), mask)
         batch.coords = X_pred
         D_pred = diag_mask * self.X_to_dist(X_pred)
-        return D_pred, diag_mask 
+        return D_pred, diag_mask, W
 
-    def forward1(self, batch):
-        # torch.autograd.set_detect_anomaly(True)   # use only when debugging
-
-        # print(batch.__dict__)
-
-        # create distance and weight matrices predictions
-        _, edge_attr = self.gnn(batch.x, batch.edge_index, batch.edge_attr)
-        edge_emb = self.edge_mlp(edge_attr)
-        dw_pred = self.pred(edge_emb)
-        dw_pred = to_dense_adj(batch.edge_index, batch.batch, dw_pred) # shape: bxNxNx2
-        dw_pred = dw_pred + dw_pred.permute([0, 2, 1, 3]) # symmetrise
-
-        # use mask and get D+W out
-        diag_mask = to_dense_adj(batch.edge_index, batch.batch) # diagonals also masked i.e. 0s on diag
-        dw_pred = self.act(self.d_init + dw_pred) * diag_mask.unsqueeze(-1)
-        D, W = dw_pred.split(1, dim=-1)
-        
-        # TODO what is this for?
-        n_fill = torch.cat([torch.arange(x) for x in batch.batch.bincount()]) 
-        mask = diag_mask.clone()
-        mask[batch.batch, n_fill, n_fill] = 1 # fill diags
-
-        # run NLWLS and create final distance matrix
-        X_pred = self.dist_nlsq(D.squeeze(-1), W.squeeze(-1), mask)
-        batch.coords = X_pred
-        D_pred = diag_mask * self.X_to_dist(X_pred)
-        return D_pred, diag_mask 
-    
     def dist_nlsq(self, D, W, mask):
-        # nonlinear weighted least squares. objective is Sum_ij { w_ij (D_ij - |x_i - x_j|)^2 }
-        # shapes: D=bx21x21; W=bx21x21; mask=bx21x21
-        T, eps, alpha, alpha_base = 10, EPS1, 5.0, 0.1 # these can be made trainable
-        
-        def grad_func(X):
-            # shapes: X=bx21x3
-            X = Variable(X, requires_grad=True) # make X variable to use autograd
-            D_X = self.X_to_dist(X) # D_X shape = bx21x21
-
-            # energy calc
-            U = torch.sum(mask * W * torch.square(D-D_X), (1,2)) / torch.sum(mask, (1,2))
-            U = torch.sum(U) # U now scalar
-            # grad calc
-            g = torch.autograd.grad(U, X, create_graph=True)[0]
-            return g
-        
-        def step_func(t, X_t):
-            # x_t shape = ?x21x3
-            g = grad_func(X_t)
-            dX = - eps * g 
-
-            # speed clipping (how fast in Angstroms)
-            speed = torch.sqrt(torch.sum(torch.square(dX), dim=2, keepdim=True) + EPS3) # bx21x3
-
-            # alpha sets max speed (soft trust region)
-            alpha_t = alpha_base + (alpha - alpha_base) * ((T - t) / T)
-            scale = alpha_t * torch.tanh(speed / alpha_t) / speed # bx21x1
-            dx_scaled = dX * scale # bx21x3
-
-            X_new = X_t + dx_scaled
-            return t+1, X_new
-        
-        B = self.dist_to_gram(D, mask)       # B, D & mask = bx21x21
-        X_init = self.low_rank_approx_power(B)   # x_init = bx21x3
-
-        return X_init
-
-        # run simulation
-        max_size = D.size(1)
-        X_init += torch.normal(0, 1, (D.shape[0], max_size, 3)).to(self.device)
-        t = 0
-        X = X_init
-        while t < T:
-            t, X = step_func(t, X)
-        
-        return X
-
-    def dist_nlsq1(self, D, W, mask):
         # nonlinear weighted least squares. objective is Sum_ij { w_ij (D_ij - |x_i - x_j|)^2 }
         # shapes: D=bx21x21; W=bx21x21; mask=bx21x21
         T, eps, alpha, alpha_base = 10, EPS1, 5.0, 0.1 # these can be made trainable

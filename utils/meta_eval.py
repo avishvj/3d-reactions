@@ -1,7 +1,7 @@
-import numpy as np, matplotlib.pyplot as plt, seaborn as sns
+import os, numpy as np, matplotlib.pyplot as plt, seaborn as sns
 from rdkit import Chem
-from dataclasses import dataclass, field
-from typing import List, Dict
+from dataclasses import dataclass
+from utils.exp import plot_tt_loss
 
 @dataclass
 class TSGenArgs:
@@ -37,6 +37,7 @@ class ExpLog:
     def __init__(self, args, test_logs=[]):
         self.args = args
         self.test_logs = test_logs
+        self.completed = False
 
     def add_test_log(self, test_log):
         self.test_logs = test_log
@@ -47,6 +48,22 @@ class ExpLog:
         np.save(D_folder + file_name, test_Ds)
         if save_to_log_dir:
             np.save(self.args.log_dir + 'D', test_Ds)
+    
+    def save_Ws(self, file_name, save_to_log_dir = False, W_folder = 'experiments/meta_eval/ws/'):
+        test_Ws = self.test_logs.Ws[-1] # dim = num_test_rxns x 21 x 21
+        # assert len(test_Ws) == 842, f"Should have 842 test_Ws when unbatched, you have {len(test_Ws)}."
+        np.save(W_folder + file_name, test_Ws)
+        if save_to_log_dir:
+            np.save(self.args.log_dir + 'W', test_Ws)
+    
+    def plot_loss(self, save_fig=False):
+        if not self.completed:
+            raise Exception("Experiment has not been run yet.")
+        log_file_path = os.path.join(os.path.dirname(self.args.log_dir), self.args.log_file_name)
+        plot_tt_loss(log_file_path, save_fig)
+
+
+
 
 class TestLog:
     def __init__(self, Ds = [], Ws = [], embs = []):
