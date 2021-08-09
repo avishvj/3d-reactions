@@ -40,8 +40,9 @@ class G2C(Module):
         dw_pred = self.act(self.d_init + dw_pred) * diag_mask.unsqueeze(-1)
         D, W = dw_pred.split(1, dim=-1)
 
-        # return diag_mask * D.squeeze(-1), diag_mask # to remove opt
+        return diag_mask * D.squeeze(-1), diag_mask, W # no power law init or opt
         
+        """
         # TODO what is this for?
         n_fill = torch.cat([torch.arange(x) for x in batch.batch.bincount()]) 
         mask = diag_mask.clone()
@@ -49,12 +50,15 @@ class G2C(Module):
 
         # run NLWLS and create final distance matrix
         # X_pred = self.dist_nlsq(D.squeeze(-1), W.squeeze(-1), mask) # orig
-        X_pred = self.pow_init(D.squeeze(-1), mask) # pow init i.e. no NLWLS and no W used
+        # X_pred = self.pow_init(D.squeeze(-1), mask) # pow init i.e. no NLWLS and no W used
+
         batch.coords = X_pred
         D_pred = diag_mask * self.X_to_dist(X_pred)
         return D_pred, diag_mask, W
+        """
 
     def pow_init(self, D, mask):
+        # used during ablation study
         B = self.dist_to_gram(D, mask)       # B, D & mask = bx21x21
         X_init = self.low_rank_approx_power(B)   # x_init = bx21x3
         return X_init
