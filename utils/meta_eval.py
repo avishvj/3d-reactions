@@ -40,18 +40,18 @@ class ExpLog:
         self.completed = False
 
     def add_test_log(self, test_log):
-        self.test_logs = test_log
+        self.test_logs.append(test_log)
     
     def save_Ds(self, file_name, save_to_log_dir = False, D_folder='experiments/meta_eval/d_inits/'):
-        test_Ds = self.test_logs.Ds[-1] # dim = num_test_rxns x 21 x 21
-        # assert len(test_Ds) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ds)}."
+        test_Ds = np.concatenate(self.test_logs[-1].Ds, 0) # final test log, new dim = num_rxns x 21 x 21
+        assert len(test_Ds) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ds)}."
         np.save(D_folder + file_name, test_Ds)
         if save_to_log_dir:
             np.save(self.args.log_dir + 'D', test_Ds)
     
-    def save_Ws(self, file_name, save_to_log_dir = False, W_folder = 'experiments/meta_eval/ws/'):
-        test_Ws = self.test_logs.Ws[-1] # dim = num_test_rxns x 21 x 21
-        # assert len(test_Ws) == 842, f"Should have 842 test_Ws when unbatched, you have {len(test_Ws)}."
+    def save_Ws(self, file_name, save_to_log_dir = False, W_folder='experiments/meta_eval/ws/'):
+        test_Ws = np.concatenate(self.test_logs[-1].Ws, 0).squeeze() # final test log, and remove singleton dims; new dim = num_rxns x 21 x 21
+        assert len(test_Ws) == 842, f"Should have 842 test_Ws when unbatched, you have {len(test_Ws)}."
         np.save(W_folder + file_name, test_Ws)
         if save_to_log_dir:
             np.save(self.args.log_dir + 'W', test_Ws)
