@@ -48,10 +48,16 @@ class G2C(Module):
         mask[batch.batch, n_fill, n_fill] = 1 # fill diags
 
         # run NLWLS and create final distance matrix
-        X_pred = self.dist_nlsq(D.squeeze(-1), W.squeeze(-1), mask)
+        # X_pred = self.dist_nlsq(D.squeeze(-1), W.squeeze(-1), mask) # orig
+        X_pred = self.pow_init(D.squeeze(-1), mask) # pow init i.e. no NLWLS and no W used
         batch.coords = X_pred
         D_pred = diag_mask * self.X_to_dist(X_pred)
         return D_pred, diag_mask, W
+
+    def pow_init(self, D, mask):
+        B = self.dist_to_gram(D, mask)       # B, D & mask = bx21x21
+        X_init = self.low_rank_approx_power(B)   # x_init = bx21x3
+        return X_init
 
     def dist_nlsq(self, D, W, mask):
         # nonlinear weighted least squares. objective is Sum_ij { w_ij (D_ij - |x_i - x_j|)^2 }
