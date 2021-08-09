@@ -7,7 +7,7 @@ from utils.meta_eval import TestLog
 
 MAX_CLIP_NORM = 10
 
-def train(model, loader, loss_func, opt, logger):
+def train(model, loader, loss_func, opt):
     total_loss = 0
     model.train()
 

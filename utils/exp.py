@@ -11,7 +11,7 @@ def construct_logger_and_dir(log_file_name, log_dir = 'log', exp_dir = None) -> 
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
-    # set logger
+    # set up console logging
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
     logger.addHandler(ch)
@@ -23,6 +23,7 @@ def construct_logger_and_dir(log_file_name, log_dir = 'log', exp_dir = None) -> 
     if not os.path.exists(full_log_dir):
         os.makedirs(full_log_dir)
     
+    # set up file logging
     fh = logging.FileHandler(os.path.join(full_log_dir, log_file_name + '.log'))
     fh.setLevel(logging.INFO)
     logger.addHandler(fh)

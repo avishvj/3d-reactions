@@ -1,11 +1,9 @@
-import os, math, numpy as np
-import matplotlib.pyplot as plt, seaborn as sns
+import os, math
 import torch
-from rdkit import Chem
 from dataclasses import asdict
 
 from utils.data import construct_dataset_and_loaders
-from utils.exp import construct_logger_and_dir, plot_tt_loss, save_yaml_file
+from utils.exp import construct_logger_and_dir, save_yaml_file
 from utils.meta_eval import ExpLog
 from models.ts_gen_pt.G2C import construct_model_opt_loss
 from models.ts_gen_pt.training import train, test
@@ -43,7 +41,7 @@ def experiment(args):
     
     logger.info("Starting training...")
     for epoch in range(1, args.n_epochs + 1):
-        train_loss = train(g2c, train_loader, loss_func, g2c_opt, logger)
+        train_loss = train(g2c, train_loader, loss_func, g2c_opt)
         logger.info("Epoch {}: Training Loss {}".format(epoch, train_loss))
 
         if epoch % args.test_interval == 0:
