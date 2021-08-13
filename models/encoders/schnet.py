@@ -8,7 +8,7 @@ from torch_scatter import scatter
 
 from math import pi as PI
 
-from ts_ae.ae import TS_AE
+from ts_ae.tsae import RPEncoder_Parent
 
 
 # pytorch version of schnet, lifted from pytorch geometric and dig
@@ -20,13 +20,17 @@ from ts_ae.ae import TS_AE
 # will have to make this an AE
 
 
-class SchNetAE(TS_AE):
+class SchNet_RPEncoder(RPEncoder_Parent):
 
-    def __init__(self, encoder, decoder, comb_func = 'average', device = 'cpu'):
-        super(SchNetAE, self).__init__()
+    def __init__(self, in_node_nf, in_edge_nf, h_nf, out_nf, emb_nf, device):
+        super(SchNet_RPEncoder, self).__init__(in_node_nf, in_edge_nf, h_nf, out_nf, emb_nf, device)
     
-    # forward: encode will be same/similar but need better decode for given features
-    # may not even need this if handled by ts_ae
+    def encode(self, batch):
+        # get batch node_feats, edge_index, edge_attr, coords
+        # create node and edge embs
+        # mean pool to get graph emb
+        return graph_emb
+
 
 class SchNetEncoder(nn.Module):
 
