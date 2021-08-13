@@ -1,30 +1,30 @@
 import math
 from platform import node
 import torch
+import torch.nn as nn
 import torch.nn.Module as Module
 
 from torch_geometric.nn.glob.glob import global_mean_pool
 
 # note: should have util funcs to create GT and LI for tt_split
 
+from ts_ae.combination import Combination
+
 
 class TSAE(Module):
 
     def __init__(self, encoder, decoder):
         super(TSAE, self).__init__()
-        self.encoder = encoder
+        self.encoder = encoder # used for reactants and products, all return graph embs
+        self.combine = Combination()
         self.decoder = decoder
     
-    def forward(self, batch):
-        graph_emb = self.encoder(batch)
-        D_pred = self.decoder(graph_emb)
-        return graph_emb, D_pred
-    
-    def encode(self, batch):
-        pass
-
-    def decode(self, embs):
-        pass
+    def forward(self, r_batch, p_batch):
+        r_emb = self.encoder(r_batch)
+        p_emb = self.encoder(p_batch)
+        ts_emb = self.combine(r_emb, p_emb)
+        D_pred = self.decoder(ts_emb)
+        return ts_emb, D_pred
 
     # loss funcs: just for coords (dist matrix)
 
@@ -58,16 +58,7 @@ class EGNN_RPEncoder(RPEncoder_Parent):
         return graph_emb
     
 
-class SchNet_RPEncoder(RPEncoder_Parent):
 
-    def __init__(self, in_node_nf, in_edge_nf, h_nf, out_nf, emb_nf, device):
-        super(SchNet_RPEncoder, self).__init__(in_node_nf, in_edge_nf, h_nf, out_nf, emb_nf, device)
-    
-    def encode(self, batch):
-        # get batch node_feats, edge_index, edge_attr, coords
-        # create node and edge embs
-        # mean pool to get graph emb
-        return graph_emb
 
 class DimeNetPP_RPEncoder(RPEncoder_Parent):
 
@@ -79,10 +70,6 @@ class DimeNetPP_RPEncoder(RPEncoder_Parent):
         # create node and edge embs
         # mean pool to get graph emb
         return graph_emb
-
-
-
-
 
 
 class TSDecoder(Module):
