@@ -1,7 +1,27 @@
 import math
 from tqdm import tqdm
+import torch, import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
 from utils.meta_eval import TestLog # TODO: create unique test log for rep learning
+
+
+def total_coord_loss(self, pred_coords, gt_coords, max_num_atoms, train_on_ts = False):
+
+    #adj_gt = to_dense_adj(gt_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
+    #assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape!" 
+    
+    r, p, ts = pred_coords
+    r_gt, p_gt, ts_gt = gt_coords
+
+    r_loss = torch.sqrt(F.mse_loss(r, r_gt))
+    p_loss = torch.sqrt(F.mse_loss(p, p_gt))
+
+    if train_on_ts:
+        ts_loss = torch.sqrt(F.mse_loss(ts, ts_gt))
+        return r_loss, p_loss, ts_loss
+    
+    return r_loss, p_loss
+
 
 def train(model, loader, loss_func, opt):
     total_loss = 0

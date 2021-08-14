@@ -1,38 +1,18 @@
+from math import pi as PI
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Linear, Sequential, Embedding
-
 from torch_geometric.nn import radius_graph
 from torch_scatter import scatter
 
-from math import pi as PI
-
-from ts_ae.tsae import RPEncoder_Parent
-
-
-# pytorch version of schnet, lifted from pytorch geometric and dig
-# https://github.com/divelab/DIG/blob/dig/dig/threedgraph/method/schnet/schnet.py
-# https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/models/schnet.html
-
-
 # define edge and node model as whichever one finishes its model first
-# will have to make this an AE
-
-
-class SchNet_RPEncoder(RPEncoder_Parent):
-
-    def __init__(self, in_node_nf, in_edge_nf, h_nf, out_nf, emb_nf, device):
-        super(SchNet_RPEncoder, self).__init__(in_node_nf, in_edge_nf, h_nf, out_nf, emb_nf, device)
-    
-    def encode(self, batch):
-        # get batch node_feats, edge_index, edge_attr, coords
-        # create node and edge embs
-        # mean pool to get graph emb
-        return graph_emb
-
 
 class SchNetEncoder(nn.Module):
+    """ PyTorch version of schnet, mostly lifted from PyTorch Geometric and DIG implementations.
+        - PyTorch Geometric: https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/models/schnet.html
+        - DIG: https://github.com/divelab/DIG/blob/dig/dig/threedgraph/method/schnet/schnet.py
+    """
 
     def __init__(self, h_nf, n_layers, n_filters, n_gaussians, cutoff_val):
         super(SchNetEncoder, self).__init__()
