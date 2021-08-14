@@ -1,6 +1,69 @@
 import os, time, logging, yaml
 import numpy as np
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
+
+
+@dataclass
+class BaseArgs:
+    # from dataclasses import asdict when needed
+
+    # logistics params
+    root_dir: str = r'data'
+    log_dir: str = r'log'
+    log_file_name: str = r'train'
+    verbose: bool = True
+    remove_existing_data: bool = False
+    
+    # data params
+    n_rxns: int = 8000 # if over limit, takes max possible ~7600
+    tt_split: float = 0.889 # to return 842 test like MIT
+    batch_size: int = 8 # default set to best MIT model params
+    
+    # training params
+    n_epochs: int = 10
+    test_interval: int = 10
+
+class BaseExpLog:
+    def __init__(self, args):
+        self.args = args
+        self.test_logs = []
+        self.completed = False
+    
+    def add_test_log(self, test_log):
+        self.test_logs.append(test_log)
+    
+    def save_Ds(self, file_name, D_folder, save_to_log_dir = False):
+        # give file names as 'D10'/'W8'/'E6'
+        test_Ds = np.concatenate(self.test_logs[-1].Ds, 0) # final test log, new dim = num_rxns x 21 x 21
+        assert len(test_Ds) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ds)}."
+        np.save(D_folder + file_name, test_Ds)
+        if save_to_log_dir:
+            np.save(self.args.log_dir + file_name, test_Ds)
+    
+    def plot_loss(self, save_fig=False):
+        if not self.completed:
+            raise Exception("Experiment has not been run yet.")
+        log_file_path = os.path.join(os.path.dirname(self.args.log_dir), self.args.log_file_name)
+        plot_tt_loss(log_file_path, save_fig)
+
+
+class TestLog:
+    def __init__(self, Ds = [], Ws = [], embs = []):
+        self.Ds = Ds
+        self.Ws = Ws
+        self.embs = embs
+    
+    def add_D(self, D):
+        self.Ds.append(D)
+    
+    def add_W(self, W):
+        self.Ws.append(W)
+
+    def add_emb(self, emb):
+        self.embs.append(emb)
+
+
 
 ### logging
 
