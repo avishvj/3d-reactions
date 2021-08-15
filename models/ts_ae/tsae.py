@@ -1,30 +1,32 @@
-import math
-from platform import node
 import torch
 import torch.nn as nn
+from ts_ae.combination import Combination
 
 # note: should have util funcs to create GT and LI for tt_split
 
-from ts_ae.combination import Combination
-
-
 class TSAE(nn.Module):
 
-    def __init__(self, encoder, decoder):
+    def __init__(self, encoder, emb_nf, device = 'cpu'):
         super(TSAE, self).__init__()
         self.encoder = encoder # used for reactants and products, all return graph embs
-        self.combine = Combination()
-        self.decoder = decoder
+        self.combine = Combination('average', emb_nf, True)
+        self.decoder = TSDecoder()
+        self.to(device)
     
     def forward(self, r_batch, p_batch):
+        
+        # encoder
+        # get batch node_feats, edge_index, edge_attr, coords
+        # create node embs
+        # mean pool to get graph emb + node embs
         r_emb = self.encoder(r_batch)
         p_emb = self.encoder(p_batch)
+        
         ts_emb = self.combine(r_emb, p_emb)
         D_pred = self.decoder(ts_emb)
         return ts_emb, D_pred
     
     # loss funcs: just for coords (dist matrix)
-
 
 
 class RPEncoder_Parent(nn.Module):
@@ -34,21 +36,26 @@ class RPEncoder_Parent(nn.Module):
 
     def forward(self, batch):
         # let's have the embs as 10 dim to start        
-        graph_emb = self.encode(batch)
-        return graph_emb
+        node_emb, graph_emb = self.encode(batch)
+        return node_emb, graph_emb
     
     def encode(self, batch):
-        # get batch node_feats, edge_index, edge_attr, coords
-        # create node and edge embs
-        # mean pool to get graph emb
+        
         pass
 
 
 class TSDecoder(nn.Module):
 
-    def __init__(self):
+    def __init__(self, node_emb_nf, graph_emb_nf, device = 'cpu'):
         super(TSDecoder, self).__init__()
-        pass
+        self.node_emb_nf = node_emb_nf
+        self.graph_emb_nf = graph_emb_nf
+        
+        # decoder adj [found these worked well]
+        self.W = nn.Parameter(0.5 * torch.ones(1)).to(device)
+        self.b = nn.Parameter(0.8 * torch.ones(1)).to(device)
+        
+        self.to(device)
     
     def forward(self, embs):
         return self.decode_to_dist(embs)
@@ -57,12 +64,14 @@ class TSDecoder(nn.Module):
         # TODO: want to decode to just coordinates i.e. interatomic dist
         # how to decode to coordinates using embs?
         
-        node_emb, edge_emb, graph_emb = embs
+        node_embs, graph_emb = embs
+
+        # relate graph emb to node emb in some way
         
-        adj_pred = self.decode_to_adj(node_emb)
+        adj_pred = self.decode_to_adj(node_embs)
         return adj_pred
 
-    def decode_to_adj(self, x, remove_self_loops = True):
+    def decode_to_dist(self, x, remove_self_loops = True):
             # x dim: [num_nodes, 2], use num_nodes as adj_matrix dim
             # returns probabilistic adj matrix
 

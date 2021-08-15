@@ -4,9 +4,8 @@ from dataclasses import asdict
 
 from utils.data import construct_dataset_and_loaders
 from utils.exp import construct_logger_and_dir, save_yaml_file
-from utils.meta_eval import ExpLog
-from models.ts_gen_pt.G2C import construct_model_opt_loss
-from models.ts_gen_pt.training import train, test
+from utils.meta_eval import TSGenExpLog
+from models.ts_gen_pt.training import train, test, construct_g2c
 
 # TODO: ablation study, UQ i.e. stability testing, weights
 
@@ -27,7 +26,7 @@ def experiment(args):
 
     # data and model
     dataset, train_loader, test_loader = construct_dataset_and_loaders(args)
-    g2c, g2c_opt, loss_func = construct_model_opt_loss(dataset, args, device)
+    g2c, g2c_opt, loss_func = construct_g2c(dataset, args, device)
     
     # multi gpu training, TODO
     #if torch.cuda.device_count() > 1:
@@ -37,7 +36,7 @@ def experiment(args):
     # training
     best_test_loss = math.inf
     best_epoch = 0
-    exp_log = ExpLog(args)
+    exp_log = TSGenExpLog(args)
     
     logger.info("Starting training...")
     for epoch in range(1, args.n_epochs + 1):

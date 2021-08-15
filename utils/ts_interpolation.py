@@ -7,6 +7,7 @@ from utils.exp import BaseArgs, BaseExpLog
 class TSIArgs(BaseArgs):
 
     # model params
+    encoder: str = 'SchNet'
     h_nf: int = 128
     n_layers: int = 2
 

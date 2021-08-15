@@ -6,8 +6,6 @@ from torch.nn import Linear, Sequential, Embedding
 from torch_geometric.nn import radius_graph
 from torch_scatter import scatter
 
-# define edge and node model as whichever one finishes its model first
-
 class SchNetEncoder(nn.Module):
     """ PyTorch version of schnet, mostly lifted from PyTorch Geometric and DIG implementations.
         - PyTorch Geometric: https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/models/schnet.html
@@ -52,7 +50,7 @@ class SchNetEncoder(nn.Module):
             edge_attr = self.edge_model(node_feats, edge_weights, edge_attr, node_is)
             node_feats = self.node_model(node_feats, edge_attr, node_js)
     
-        return self.graph_model(node_feats, batch_node_vec)
+        return node_feats, self.graph_model(node_feats, batch_node_vec)
 
     def node_model(self, node_feats, edge_attr, node_js):
         # schnet diagram: TODO

@@ -3,7 +3,7 @@ from torch.autograd import Variable
 from torch.nn import Linear, Module
 from torch_geometric.utils import to_dense_adj
 
-from utils.exp import save_yaml_file
+
 from models.ts_gen_pt.GNN import GNN, MLP
 
 MAX_N = 21
@@ -146,30 +146,3 @@ class G2C(Module):
         return D
 
 
-def construct_model_opt_loss(dataset, args, device):
-    # constructs model, optimiser, loss function + saves model params
-    # TODO: scheduler here
-
-    # model
-    g2c_parameters = {'in_node_nf': dataset.num_node_features, 'in_edge_nf': dataset.num_edge_features,
-            'h_nf': args.h_nf, 'gnn_depth': args.gnn_depth, 'n_layers': args.n_layers, 'device': device}
-    g2c = G2C(**g2c_parameters)
-
-    # optimiser
-    if args.optimiser == 'adam':
-        g2c_opt = torch.optim.Adam(g2c.parameters(), args.lr)
-    else:
-        raise NotImplementedError(f"Optimiser string is invalid. You entered '{args.optimiser}', please select from TODO")
-    
-    # loss func
-    if args.loss == 'mse':
-        loss_func = torch.nn.MSELoss(reduction='sum')
-    elif args.loss == 'mae':
-        loss_func = torch.nn.L1Loss(reduction='sum')
-    else:
-        raise NotImplementedError(f"Loss function string is invalid. You entered '{args.loss}', please select from TODO")
-    
-    yaml_file_name = os.path.join(args.log_dir, 'model_parameters.yml')
-    save_yaml_file(yaml_file_name, g2c_parameters)
-
-    return g2c, g2c_opt, loss_func

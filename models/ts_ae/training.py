@@ -1,11 +1,33 @@
 import math
+from models.encoders.schnet import SchNetEncoder
+from models.ts_ae.tsae import TSAE
 from tqdm import tqdm
 import torch, import torch.nn.functional as F
 from torch_geometric.utils import to_dense_adj
+from utils.ts_interpolation import TSIExpLog
 from utils.meta_eval import TestLog # TODO: create unique test log for rep learning
 
 
-def total_coord_loss(self, pred_coords, gt_coords, max_num_atoms, train_on_ts = False):
+def construct_tsae(dataset, args, device):
+    
+    # model
+    if args.encoder == 'schnet':
+        encoder = SchNetEncoder()
+    #elif encoder == 'egnn':
+    #    encoder = EGNNEncoder()
+
+    tsae_parameters = {'encoder': encoder, 'emb_nf': args.h_nf, 'device': device}
+    tsae = TSAE(**tsae_parameters)
+    
+    # opt and loss
+    tsae_opt = torch.optim.Adam(tsae.parameters(), args.lr)
+    loss_func = total_coord_loss
+
+    return tsae, tsae_opt, loss_func
+
+
+
+def total_coord_loss(pred_coords, gt_coords, max_num_atoms, train_on_ts = False):
 
     #adj_gt = to_dense_adj(gt_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
     #assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape!" 
@@ -46,7 +68,7 @@ def train(model, loader, loss_func, opt):
 def test(model, loader, loss_func):
     total_loss = 0
     model.eval()
-    test_log = TestLog() 
+    test_log = TSIExpLog() 
     
     for batch_id, rxn_batch in tqdm(enumerate(loader)):
         rxn_batch = rxn_batch.to(model.device)
@@ -56,8 +78,8 @@ def test(model, loader, loss_func):
         batch_loss = loss_func(D_pred, D_gt) # / mask.sum()
         total_loss += batch_loss.item()
 
-        # test_log.add_embs(embs)
-        # test_log.add_D(D_pred) so can look at PyMol after
+        test_log.save_embs(embs)
+        test_log.save_Ds(D_pred) # so can look at PyMol after
     
     RMSE = math.sqrt(total_loss / len(loader.dataset))
     return RMSE, test_log
