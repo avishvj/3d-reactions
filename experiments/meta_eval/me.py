@@ -9,7 +9,7 @@ from models.ts_gen_pt.training import train, test, construct_g2c
 
 # TODO: ablation study, UQ i.e. stability testing, weights
 
-def experiment(args):
+def me_experiment(args):
 
     # construct logger, exp directory, and set device
     torch.set_printoptions(precision = 3, sci_mode = False)
@@ -27,11 +27,6 @@ def experiment(args):
     # data and model
     dataset, train_loader, test_loader = construct_dataset_and_loaders(args)
     g2c, g2c_opt, loss_func = construct_g2c(dataset, args, device)
-    
-    # multi gpu training, TODO
-    #if torch.cuda.device_count() > 1:
-    #    logger.info(f'Using {torch.cuda.device_count()} GPUs for training...')
-    #    g2c = torch.nn.DataParallel(g2c)
 
     # training
     best_test_loss = math.inf

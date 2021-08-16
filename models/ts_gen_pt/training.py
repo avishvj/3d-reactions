@@ -4,9 +4,8 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 from torch_geometric.utils import to_dense_adj
-from G2C import G2C
-from utils.meta_eval import TSGenExpLog
-from utils.exp import save_yaml_file
+from models.ts_gen_pt.G2C import G2C
+from utils.exp import save_yaml_file, TestLog
 
 MAX_CLIP_NORM = 10
 
@@ -68,7 +67,7 @@ def train(model, loader, loss_func, opt):
 def test(model, loader, loss_func):
     total_loss = 0
     model.eval()
-    test_log = TSGenExpLog() 
+    test_log = TestLog() 
     
     for batch_id, rxn_batch in tqdm(enumerate(loader)):
         rxn_batch = rxn_batch.to(model.device)

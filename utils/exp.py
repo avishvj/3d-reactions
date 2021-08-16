@@ -63,8 +63,6 @@ class TestLog:
     def add_emb(self, emb):
         self.embs.append(emb)
 
-
-
 ### logging
 
 def construct_logger_and_dir(log_file_name, log_dir = 'log', exp_dir = None) -> logging.Logger:
