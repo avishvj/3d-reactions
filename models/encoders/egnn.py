@@ -1,24 +1,14 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch_geometric.nn.glob.glob import global_mean_pool
+from utils.models import unsorted_segment_sum
 
-from ..utils import unsorted_segment_sum
 
 class EGNNEncoder(nn.Module):
     """ Encoder class that uses NECLayer. Have this as general encoder for 3D layers. """
 
     def __init__(self, in_node_nf = 11, in_edge_nf = 4, h_nf = 4, out_nf = 4, emb_nf = 2, act_fn = nn.ReLU(), device = 'cpu'):
         super(EGNNEncoder, self).__init__()
-
-        # standard params
-        self.in_node_nf = in_node_nf
-        self.in_edge_nf = in_edge_nf
-        self.h_nf = h_nf
-        self.out_nf = out_nf
-        self.emb_nf = emb_nf
-        self.device = device
-        # coord params?
 
         # main layer(s)
         necl = NECLayer(in_node_nf, in_edge_nf, h_nf, out_nf, act_fn)

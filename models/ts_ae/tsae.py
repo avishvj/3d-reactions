@@ -15,29 +15,18 @@ class TSAE(nn.Module):
     
     def forward(self, r_batch, p_batch):
         
-        # encoder
-        # get batch node_feats, edge_index, edge_attr, coords
-        # create node embs
-        # mean pool to get graph emb + node embs
-        r_emb = self.encoder(r_batch)
-        p_emb = self.encoder(p_batch)
+        # convert initial batch data so that R and P have own batches
+        # batch data needed: node_feats, edge_index, edge_attr, coords, batch_node_vec, atomic_ns
+
+        # TODO: use node embs
+        r_n_embs, r_g_emb = self.encoder(r_batch)
+        p_n_embs, p_g_emb = self.encoder(p_batch)
         
-        ts_emb = self.combine(r_emb, p_emb)
-        D_pred = self.decoder(ts_emb)
-        return ts_emb, D_pred
+        ts_g_emb = self.combine(r_g_emb, p_g_emb)
+        embs = (r_g_emb, p_g_emb, ts_g_emb)
+        D_pred = self.decoder(ts_g_emb)
 
-
-"""
-Encoder template: 
-init(in_node, in_edge, emb_nf, n_layers, act_fn, device)
-
-They are all the same apart from Layer.So encoder could be the same.
-Put SchNet layer stuff into EGNN format: init layer and then actual layer.
-
-Layer needs to follow:
-init(emb_nf, n_layers, etc.)
-"""
-
+        return embs, D_pred
 
 
 class BaseLayer(nn.Module):
