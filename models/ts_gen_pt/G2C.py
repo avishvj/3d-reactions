@@ -39,23 +39,20 @@ class G2C(Module):
         diag_mask = to_dense_adj(batch.edge_index, batch.batch) # diagonals also masked i.e. 0s on diag
         dw_pred = self.act(self.d_init + dw_pred) * diag_mask.unsqueeze(-1)
         D, W = dw_pred.split(1, dim=-1)
-
-        return diag_mask * D.squeeze(-1), diag_mask, W # no power law init or opt
+        # return diag_mask * D.squeeze(-1), diag_mask, W # ablation: no power law init or opt
         
-        """
         # TODO what is this for?
         n_fill = torch.cat([torch.arange(x) for x in batch.batch.bincount()]) 
         mask = diag_mask.clone()
         mask[batch.batch, n_fill, n_fill] = 1 # fill diags
 
         # run NLWLS and create final distance matrix
-        # X_pred = self.dist_nlsq(D.squeeze(-1), W.squeeze(-1), mask) # orig
-        # X_pred = self.pow_init(D.squeeze(-1), mask) # pow init i.e. no NLWLS and no W used
-
+        # X_pred = self.pow_init(D.squeeze(-1), mask) # pow init ablation: no NLWLS and no W used
+        X_pred = self.dist_nlsq(D.squeeze(-1), W.squeeze(-1), mask) # orig
+        
         batch.coords = X_pred
         D_pred = diag_mask * self.X_to_dist(X_pred)
         return D_pred, diag_mask, W
-        """
 
     def pow_init(self, D, mask):
         # used during ablation study

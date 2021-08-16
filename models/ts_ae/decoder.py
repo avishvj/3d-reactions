@@ -54,10 +54,8 @@ class MolDecoder(nn.Module):
 
 class TSDecoder(nn.Module):
 
-    def __init__(self, node_emb_nf, graph_emb_nf, device = 'cpu'):
+    def __init__(self, device = 'cpu'):
         super(TSDecoder, self).__init__()
-        self.node_emb_nf = node_emb_nf
-        self.graph_emb_nf = graph_emb_nf
         
         # decoder adj [found these worked well]
         self.W = nn.Parameter(0.5 * torch.ones(1)).to(device)

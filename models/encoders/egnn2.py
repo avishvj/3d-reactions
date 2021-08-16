@@ -4,13 +4,19 @@ from torch_geometric.nn.glob.glob import global_mean_pool
 from utils.models import unsorted_segment_sum
 
 class EGNNEncoder(nn.Module):
+    """PyTorch version of EGNN, mostly lifted from original implementation.
+    Sources:
+        - EGNN paper: https://arxiv.org/abs/2102.09844
+        - https://github.com/vgsatorras/egnn/blob/main/models/egnn_clean/egnn_clean.py
+    """
 
     def __init__(self, in_node_nf, in_edge_nf, h_nf, out_nf, emb_nf, n_layers, act_fn = nn.ReLU(), device = 'cpu'):
         super(EGNNEncoder, self).__init__()
 
         # main layers (no init layer needed)
         self.n_layers = n_layers
-        self.add_module("EGNN_0", EGNNUpdate(in_node_nf, in_edge_nf, h_nf, out_nf, act_fn)) # should maybe init this with embs
+        # TODO: emb init instead?
+        self.add_module("EGNN_0", EGNNUpdate(in_node_nf, in_edge_nf, h_nf, out_nf, act_fn)) 
         for l in range(1, n_layers):
             self.add_module(f"EGNN_{l}", EGNNUpdate(out_nf, in_edge_nf, out_nf, out_nf, act_fn))
         
@@ -20,13 +26,13 @@ class EGNNEncoder(nn.Module):
         self.to(device)
     
     def forward(self, batch):
-        node_feats, edge_index, edge_attr, coords = batch.node_feats, batch.edge_index, batch.edge_attr, batch.pos
+        node_feats, edge_index, edge_attr, coords, batch_node_vec = batch.node_feats, batch.edge_index, batch.edge_attr, batch.pos, batch.batch
         for l in range(self.n_layers):
             node_feats, edge_attr, coords = self._modules[f"EGNN_{l}"](node_feats, edge_index, edge_attr, coords)
-        
-        batch_node_vec = batch.batch
         node_embs, graph_emb = self.post(node_feats, batch_node_vec)
         return node_embs, graph_emb, coords
+
+### Main classes used for EGNN processing
 
 class EGNNUpdate(nn.Module):
     """Equivariant convolution layer to process nodes, edges, and coordinates.
@@ -101,6 +107,7 @@ class EGNNUpdate(nn.Module):
         return self.node_mlp(node_in)
     
 class EGNNPost(nn.Module):
+    """Final EGNN processing for node and graph embeddings."""
     
     def __init__(self, out_nf, emb_nf):
         self.node_emb_out = nn.Linear(out_nf, emb_nf)

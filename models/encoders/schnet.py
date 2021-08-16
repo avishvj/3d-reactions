@@ -7,7 +7,7 @@ from torch_geometric.nn import radius_graph
 from torch_scatter import scatter
 
 class SchNetEncoder(nn.Module):
-    """ PyTorch version of SchNet, mostly lifted from PyTorch Geometric and DIG implementations.
+    """PyTorch version of SchNet, mostly lifted from PyTorch Geometric and DIG implementations.
     Sources:
         - SchNet paper: https://arxiv.org/abs/1706.08566
         - PyTorch Geometric: https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/models/schnet.html
@@ -29,21 +29,21 @@ class SchNetEncoder(nn.Module):
         """One pass of the SchNet interaction block."""
         atomic_ns, edge_index, coords, batch_node_vec = batch.z, batch.edge_index, batch.pos, batch.batch
         node_embs, edge_embs, edge_weights = self.init(atomic_ns, edge_index, coords, batch_node_vec)
-        
         for l in range(self.n_layers):
             node_embs, edge_embs = self._modules[f"SchNet_{l}"](node_embs, edge_index, edge_embs, edge_weights)
-        
         node_embs, graph_emb = self.post(node_embs, batch_node_vec)
-        return node_embs, graph_emb
+        return node_embs, graph_emb, None # None for coords
 
-### Main SchNet classes
+### Main classes used for SchNet processing
 
 class SchNetInit(nn.Module):
     """Initialise node and edge (dist) embeddings to pass to looped SchNet layers."""
+    POSS_ELEMS = 100
+    ORIGIN = 0.
     
     def __init__(self, h_nf, cutoff_val, n_gaussians):
-        self.node_emb = Embedding(100, h_nf) # NOTE: is this 100 because upper bound of possible chemical elems?
-        self.dist_emb = GaussianSmearing(0., cutoff_val, n_gaussians) # NOTE: make 0. const
+        self.node_emb = Embedding(self.POSS_ELEMS, h_nf) # NOTE: is this 100 because upper bound of possible chemical elems?
+        self.dist_emb = GaussianSmearing(self.ORIGIN, cutoff_val, n_gaussians) # NOTE: make 0. const
     
     def forward(self, atomic_ns, edge_index, coords, batch_node_vec):
         

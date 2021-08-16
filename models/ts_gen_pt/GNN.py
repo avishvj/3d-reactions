@@ -1,8 +1,9 @@
+import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import Sequential, Linear, Module, ReLU, ModuleList, BatchNorm1d
+from torch.nn import Sequential, Linear, ReLU, ModuleList, BatchNorm1d
 from torch_scatter import scatter_sum
 
-class GNN(Module):
+class GNN(nn.Module):
     def __init__(self, in_node_nf, in_edge_nf, h_nf=100, n_layers=2, gnn_depth=3):
         super(GNN, self).__init__()
         self.n_layers = n_layers
@@ -18,7 +19,7 @@ class GNN(Module):
             node_feats, edge_attr = self.update(node_feats, edge_index, edge_attr)
         return node_feats, edge_attr
     
-class MetaLayer(Module):
+class MetaLayer(nn.Module):
     # inspired by <https://arxiv.org/abs/1806.01261>`
     def __init__(self, node_model=None, edge_model=None):
         super(MetaLayer, self).__init__()
@@ -33,7 +34,7 @@ class MetaLayer(Module):
             node_feats = node_feats + self.node_model(node_feats, edge_index, edge_attr)
         return node_feats, edge_attr
 
-class NodeModel(Module):
+class NodeModel(nn.Module):
     def __init__(self, h_nf, n_layers):
         super(NodeModel, self).__init__()
         self.node_mlp1 = MLP(h_nf, h_nf, n_layers)
@@ -45,7 +46,7 @@ class NodeModel(Module):
         out = scatter_sum(out, node_js, dim=0, dim_size=node_feats.size(0))
         return self.node_mlp2(out)
 
-class EdgeModel(Module):
+class EdgeModel(nn.Module):
     def __init__(self, h_nf, n_layers):
         super(EdgeModel, self).__init__()
         self.edge_lin = Linear(h_nf, h_nf)
@@ -61,7 +62,7 @@ class EdgeModel(Module):
         out = F.relu(f_ij + f_i[node_is] + f_j[node_js])
         return self.mlp(out)
 
-class MLP(Module):
+class MLP(nn.Module):
     def __init__(self, in_nf, out_nf, n_layers, act=ReLU()):
         super(MLP, self).__init__()
         self.layers = ModuleList()

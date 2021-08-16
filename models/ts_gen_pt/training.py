@@ -9,7 +9,6 @@ from utils.exp import save_yaml_file, TestLog
 
 MAX_CLIP_NORM = 10
 
-
 def construct_g2c(dataset, args, device):
     # constructs model, optimiser, loss function + saves model params
     # TODO: scheduler here
