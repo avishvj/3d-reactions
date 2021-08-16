@@ -51,6 +51,9 @@ def tsi_experiment(args):
 
     return exp_log
 
+def display_embs():
+    pass
+
 
 
 

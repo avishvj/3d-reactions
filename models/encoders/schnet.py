@@ -7,76 +7,108 @@ from torch_geometric.nn import radius_graph
 from torch_scatter import scatter
 
 class SchNetEncoder(nn.Module):
-    """ PyTorch version of schnet, mostly lifted from PyTorch Geometric and DIG implementations.
+    """ PyTorch version of SchNet, mostly lifted from PyTorch Geometric and DIG implementations.
+    Sources:
+        - SchNet paper: https://arxiv.org/abs/1706.08566
         - PyTorch Geometric: https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/models/schnet.html
         - DIG: https://github.com/divelab/DIG/blob/dig/dig/threedgraph/method/schnet/schnet.py
     """
 
-    def __init__(self, h_nf, n_layers, n_filters, n_gaussians, cutoff_val):
+    def __init__(self, h_nf, n_filters, n_gaussians, cutoff_val, n_layers = 1):
         super(SchNetEncoder, self).__init__()
-        self.h_nf = h_nf
-        self.n_layers = n_layers
-        self.n_filters = n_filters
-        self.n_gaussians = n_gaussians
 
-        # init
-        self.init_node_emb = Embedding(100, h_nf) # NOTE: is this 100 because upper bound of possible chemical elems?
-        self.init_dist_emb = GaussianSmearing(0., cutoff_val, n_gaussians) # NOTE: make 0. const
+        self.init = SchNetInit(h_nf, cutoff_val, n_gaussians)
+
+        self.n_layers = n_layers
+        for l in range(self.n_layers):
+            self.add_module(f"SchNet_{l}", SchNetUpdate(h_nf, n_filters, n_gaussians, cutoff_val))
+
+        self.post = SchNetPost(h_nf)
+    
+    def forward(self, batch):
+        """One pass of the SchNet interaction block."""
+        atomic_ns, edge_index, coords, batch_node_vec = batch.z, batch.edge_index, batch.pos, batch.batch
+        node_embs, edge_embs, edge_weights = self.init(atomic_ns, edge_index, coords, batch_node_vec)
+        
+        for l in range(self.n_layers):
+            node_embs, edge_embs = self._modules[f"SchNet_{l}"](node_embs, edge_index, edge_embs, edge_weights)
+        
+        node_embs, graph_emb = self.post(node_embs, batch_node_vec)
+        return node_embs, graph_emb
+
+### Main SchNet classes
+
+class SchNetInit(nn.Module):
+    """Initialise node and edge (dist) embeddings to pass to looped SchNet layers."""
+    
+    def __init__(self, h_nf, cutoff_val, n_gaussians):
+        self.node_emb = Embedding(100, h_nf) # NOTE: is this 100 because upper bound of possible chemical elems?
+        self.dist_emb = GaussianSmearing(0., cutoff_val, n_gaussians) # NOTE: make 0. const
+    
+    def forward(self, atomic_ns, edge_index, coords, batch_node_vec):
+        
+        # create initial node embs from atom charges
+        node_embs = self.node_emb(atomic_ns)
+        
+        # create initial edge embs from coordinates
+        edge_index = radius_graph(coords, self.cutoff, batch_node_vec)
+        node_is, node_js = edge_index
+        edge_weights = (coords[node_is] - coords[node_js]).norm(dim = -1)
+        edge_embs = self.dist_emb(edge_weights) # edge_embs = interatomic dist embs
+
+        return node_embs, edge_embs, edge_weights
+
+class SchNetUpdate(nn.Module):
+    """SchNet update block. Subblock of overall interaction block that can be looped."""
+
+    def __init__(self, h_nf, n_filters, n_gaussians, cutoff_val):
 
         # edge update
-        self.node_lin = Linear(h_nf, n_filters, bias = False) # TODO: change name
+        self.node_lin = Linear(h_nf, n_filters, bias = False) 
         self.cutoff_net = CosineCutoff(cutoff_val)
         self.edge_mlp = Sequential(Linear(n_gaussians, n_filters), ShiftedSoftplus(), Linear(n_filters, n_filters))
 
         # node update
         self.node_mlp = Sequential(Linear(n_filters, h_nf), ShiftedSoftplus(), Linear(h_nf, h_nf))
-
-        # graph update
-        self.graph_mlp = Sequential(Linear(h_nf, h_nf // 2), ShiftedSoftplus(), Linear(h_nf // 2, 1))
     
-    def forward(self, atomic_ns, coords, batch_node_vec):
-        # == interaction block pass
-        
-        # create node feats from atom charges
-        node_feats = self.init_node_emb(atomic_ns)
-        
-        # create edge attrs from coordinates
-        edge_index = radius_graph(coords, self.cutoff, batch_node_vec)
+    def forward(self, node_embs, edge_index, edge_embs, edge_weights):
+        """Updates node and edge embeddings. edge_weights are IA dists, edge_embs are IA dist embs.
+        NOTE: Why node_is and node_js?
+        """
         node_is, node_js = edge_index
-        edge_weights = (coords[node_is] - coords[node_js]).norm(dim = -1)
-        edge_attr = self.init_dist_emb(edge_weights) # edge_attr = interatomic dist embs
-
-        for _ in range(self.n_layers):
-            edge_attr = self.edge_model(node_feats, edge_weights, edge_attr, node_is)
-            node_feats = self.node_model(node_feats, edge_attr, node_js)
+        edge_embs = self.edge_update(node_embs, node_is, edge_embs, edge_weights)
+        node_embs = self.node_update(node_embs, node_js, edge_embs)
+        return node_embs, edge_embs
     
-        return node_feats, self.graph_model(node_feats, batch_node_vec)
-
-    def node_model(self, node_feats, edge_attr, node_js):
-        # schnet diagram: TODO
-        node_out = scatter(edge_attr, node_js, dim = 0)
+    def node_update(self, node_embs, node_js, edge_embs):
+        """SchNet diagram: TODO"""
+        node_out = scatter(edge_embs, node_js, dim = 0)
         node_out = self.node_mlp(node_out)
-        return node_feats + node_out
+        return node_embs + node_out
     
-    def edge_model(self, node_feats, edge_weights, edge_attr, node_is):
-        # schnet diagram: first node layer + cfconv post init
-        # edge_weights are interatomic dists, edge_attr are interatomic dist embs
-        node_feats = self.node_lin(node_feats)
+    def edge_update(self, node_embs, node_is, edge_embs, edge_weights):
+        """SchNet diagram: first node layer + cfconv post init."""
+        node_embs = self.node_lin(node_embs)
         cutoff = self.cutoff_net(edge_weights)
-        W = self.edge_mlp(edge_attr) * cutoff.view(-1, 1)
-        return node_feats[node_is] * W
-    
-    def graph_model(self, node_feats, node_batch_vec):
-        # schnet diagram: blue blocks
-        node_feats = self.graph_mlp(node_feats)
-        graph_emb = scatter(node_feats, node_batch_vec, dim = 0) # TODO: double check scatter
-        return graph_emb
+        W = self.edge_mlp(edge_embs) * cutoff.view(-1, 1)
+        return node_embs[node_is] * W
 
+class SchNetPost(nn.Module):
+    """SchNet diagram: blue blocks. Create final node embeddings and graph embedding."""
+
+    def __init__(self, h_nf):
+        self.node_emb_out = Sequential(Linear(h_nf, h_nf // 2), ShiftedSoftplus(), Linear(h_nf // 2, 1))
+    
+    def forward(self, node_feats, node_batch_vec):
+        node_embs = self.node_emb_out(node_feats)
+        graph_emb = scatter(node_embs, node_batch_vec, dim = 0)
+        return node_embs, graph_emb
+
+### Subclasses used for SchNet processing
 
 class CosineCutoff(nn.Module):
-    # following 3DMP, we use the cosine cutoff
-    # also hard cutoff and mollifier cut off
-
+    """Following SphereNet, we also use the cosine cutoff. Alternatives: hard, mollifer cutoffs."""
+    
     def __init__(self, cutoff = 0.5):
         super(CosineCutoff, self).__init__()
         self.register_buffer("cutoff", torch.FloatTensor[cutoff])
@@ -87,11 +119,9 @@ class CosineCutoff(nn.Module):
         cutoffs *= (interatomic_dists < self.cutoff).float()
         return cutoffs
 
-
 class GaussianSmearing(nn.Module):
-    # expand interatomic distances to get interatomic distance embeddings
-    # this is one method but there are others too
-
+    """Expand interatomic distances to get interatomic distance embs. Alternative methods exist."""
+    
     def __init__(self, start, stop, n_gaussians):
         super(GaussianSmearing, self).__init__()
         # offset of gaussian funcs, NOTE: could set trainable
@@ -102,9 +132,7 @@ class GaussianSmearing(nn.Module):
         interatomic_dists = interatomic_dists.view(-1, 1) - self.offset.view(1, -1)
         return torch.exp(self.coeff * torch.pow(interatomic_dists, 2))
 
-
 class ShiftedSoftplus(nn.Module):
-    # the act function they use
 
     def __init__(self):
         super(ShiftedSoftplus, self).__init__()
