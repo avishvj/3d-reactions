@@ -4,8 +4,7 @@ from dataclasses import asdict
 
 from models.ts_ae.training import construct_tsae, train, test
 from utils.exp import construct_logger_and_dir, save_yaml_file
-from utils.data import construct_dataset_and_loaders
-from utils.ts_interpolation import TSIExpLog
+from utils.ts_interpolation import TSIExpLog, construct_dataset_and_loaders
 
 
 def tsi_experiment(args):

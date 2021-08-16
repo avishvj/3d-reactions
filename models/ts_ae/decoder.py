@@ -63,8 +63,8 @@ class TSDecoder(nn.Module):
         
         self.to(device)
     
-    def forward(self, embs):
-        node_embs, graph_embs = embs
+    def forward(self, node_embs):
+        # node_embs, graph_embs = embs
         return self.decode_to_dist(node_embs)
 
     def decode_to_dist(self, x, remove_self_loops = True):

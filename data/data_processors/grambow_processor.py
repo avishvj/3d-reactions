@@ -39,18 +39,21 @@ class OtherReactionTriple(Data):
             self.edge_index_r = r.edge_index
             self.pos_r = r.pos
             self.x_r = r.x
+            self.z_r = r.z
 
             # ts
             self.edge_attr_ts = ts.edge_attr
             self.edge_index_ts = ts.edge_index
             self.pos_ts = ts.pos
             self.x_ts = ts.x
+            self.z_ts = ts.z
 
             # product
             self.edge_attr_p = p.edge_attr
             self.edge_index_p = p.edge_index
             self.pos_p = p.pos
             self.x_p = p.x
+            self.z_p = p.z
         else:
             NameError("Reactant, TS, or Product not defined for this reaction.")
 
@@ -125,16 +128,13 @@ class ReactionTriple(Data):
 class ReactionDataset(InMemoryDataset):
     """ Creates instance of reaction dataset, essentially a list of ReactionTriple(Reactant, TS, Product).
     TODO:
-        - Remove TEMP_MOLS_LIMIT
         - get_tracker(): factory method for wandb tracker log [ref pyg 3D]
     """
-
     TYPES = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
     BONDS = {BT.SINGLE: 0, BT.DOUBLE: 1, BT.TRIPLE: 2, BT.AROMATIC: 3}
-    TEMP_MOLS_LIMIT = 8000
 
-    def __init__(self, root_folder, transform = None, pre_transform = None):
-
+    def __init__(self, root_folder, n_rxns, transform = None, pre_transform = None):
+        self.n_rxns = n_rxns
         self.rxn_data = None
         super(ReactionDataset, self).__init__(root_folder, transform, pre_transform)
 
@@ -208,15 +208,29 @@ class ReactionDataset(InMemoryDataset):
         # get atom and edge features for each geometry
         for i, mol in enumerate(tqdm(geometries)):
 
-            # temp_soln cos of memory issues TODO: change
-            if i == self.TEMP_MOLS_LIMIT:
+            if i == self.n_rxns:
                 break
 
             N = mol.GetNumAtoms()
+            
+            #atom_positions = []
+            #for c in mol.GetConformers():
+            #    atom_positions.append(c.GetPositions())
+            #atom_positions = torch.tensor(atom_positions, dtype = torch.float)
+            
             # get atom positions as matrix w shape [num_nodes, num_dimensions] = [num_atoms, 3]
             atom_data = geometries.GetItemText(i).split('\n')[4: 4+N]
             atom_positions = [[float(x) for x in line.split()[:3]] for line in atom_data]
             atom_positions = torch.tensor(atom_positions, dtype = torch.float)
+            
+            # redoing positions
+            #D = Chem.Get3DDistanceMatrix(mol)
+            #atom_positions = []
+            #for i in range(N):
+            #    for j in range(i+1, N):
+            #        atom_positions.extend([D[i][j], D[j][i]])
+            #atom_positions = torch.tensor(atom_positions, dtype = torch.float)
+            
             # all the features
             type_idx, atomic_number, aromatic = [], [], []
             sp, sp2, sp3 = [], [], []

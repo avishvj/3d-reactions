@@ -26,7 +26,9 @@ class EGNNEncoder(nn.Module):
         self.to(device)
     
     def forward(self, batch):
-        node_feats, edge_index, edge_attr, coords, batch_node_vec = batch.node_feats, batch.edge_index, batch.edge_attr, batch.pos, batch.batch
+        node_feats, batch_node_vec = batch['node_feats'], batch['batch_node_vec']
+        edge_index, edge_attr = batch['edge_index'], batch['edge_attr']
+        coords = batch['coords']
         for l in range(self.n_layers):
             node_feats, edge_attr, coords = self._modules[f"EGNN_{l}"](node_feats, edge_index, edge_attr, coords)
         node_embs, graph_emb = self.post(node_feats, batch_node_vec)
@@ -62,7 +64,6 @@ class EGNNUpdate(nn.Module):
     
     def forward(self, node_feats, edge_index, edge_attr, coords):
         radial, bond_lengths = self.coord_to_radial(edge_index, coords)
-        
         edge_out = self.edge_update(node_feats, edge_index, edge_attr, radial)
         coord_out = self.coord_update(edge_index, edge_out, coords, bond_lengths)
         node_out = self.node_update(node_feats, edge_index, edge_out, coord_out)
@@ -74,7 +75,7 @@ class EGNNUpdate(nn.Module):
         """
         atom_is, atom_js = edge_index
         bond_lengths = coords[atom_is] - coords[atom_js]
-        radial = torch.sum((bond_lengths)**2, 1).unsqueeze(1)
+        radial = torch.sum(bond_lengths**2, 1).unsqueeze(1)
         norm = torch.sqrt(radial) + 1
         normed_bond_lengths = bond_lengths / norm
         return radial, normed_bond_lengths
@@ -110,6 +111,7 @@ class EGNNPost(nn.Module):
     """Final EGNN processing for node and graph embeddings."""
     
     def __init__(self, out_nf, emb_nf):
+        super(EGNNPost, self).__init__()
         self.node_emb_out = nn.Linear(out_nf, emb_nf)
     
     def forward(self, node_feats, batch_node_vec):

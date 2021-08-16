@@ -41,7 +41,6 @@ class G2C(Module):
         D, W = dw_pred.split(1, dim=-1)
         # return diag_mask * D.squeeze(-1), diag_mask, W # ablation: no power law init or opt
         
-        # TODO what is this for?
         n_fill = torch.cat([torch.arange(x) for x in batch.batch.bincount()]) 
         mask = diag_mask.clone()
         mask[batch.batch, n_fill, n_fill] = 1 # fill diags

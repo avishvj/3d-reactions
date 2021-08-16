@@ -24,6 +24,13 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
 
 ### distance geometry funcs
 
+def X_to_dist(X):
+    # create euclidean distance matrix from X
+    # shapes: X = bx21x3, D = bx21x21
+    Dsq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
+    D = torch.sqrt(torch.sum(Dsq, dim=3) + 1E-3)
+    return D
+
 def interatomic_distance(atom_1, atom_2):
     return np.linalg.norm(atom_1.position - atom_2.position)
 

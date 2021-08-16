@@ -27,7 +27,9 @@ class SchNetEncoder(nn.Module):
     
     def forward(self, batch):
         """One pass of the SchNet interaction block."""
-        atomic_ns, edge_index, coords, batch_node_vec = batch.z, batch.edge_index, batch.pos, batch.batch
+        atomic_ns, batch_node_vec = batch['atomic_ns'], batch['batch_node_vec']
+        edge_index = batch['edge_index']
+        coords = batch['coords']
         node_embs, edge_embs, edge_weights = self.init(atomic_ns, edge_index, coords, batch_node_vec)
         for l in range(self.n_layers):
             node_embs, edge_embs = self._modules[f"SchNet_{l}"](node_embs, edge_index, edge_embs, edge_weights)

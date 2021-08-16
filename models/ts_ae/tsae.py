@@ -5,12 +5,14 @@ from models.ts_ae.decoder import TSDecoder
 # note: should have util funcs to create GT and LI for tt_split
 
 class TSAE(nn.Module):
+    """Autoencoder for creating TS geometries from 2D/3D reactant and product molecular graphs."""
 
     def __init__(self, encoder, emb_nf, device = 'cpu'):
         super(TSAE, self).__init__()
         self.encoder = encoder # used for reactants and products, all return n emb, g emb, coords
         self.combine = Combination('average', emb_nf, False, device)
         self.decoder = TSDecoder(device)
+        self.device = device
         self.to(device)
     
     def forward(self, r_batch, p_batch):
@@ -21,9 +23,13 @@ class TSAE(nn.Module):
         r_n_embs, r_g_emb, r_coords = self.encoder(r_batch)
         p_n_embs, p_g_emb, p_coords = self.encoder(p_batch)
         
-        ts_g_emb = self.combine(r_g_emb, p_g_emb)
-        D_pred = self.decoder(ts_g_emb)
-        embs = (r_g_emb, p_g_emb, ts_g_emb)
+        ts_n_embs = self.combine(r_n_embs, p_n_embs)
+
+        # ts_g_emb = self.combine(r_g_emb, p_g_emb)
+
+        D_pred = self.decoder(ts_n_embs)
+        # embs = (r_g_emb, p_g_emb, ts_g_emb)
+        embs = (r_n_embs, p_n_embs, ts_n_embs)
 
         return embs, D_pred
 
@@ -34,6 +40,7 @@ class Combination(nn.Module):
     """
 
     def __init__(self, comb_func, emb_nf, nn_for_ts = False, device = 'cpu'):
+        super(Combination, self).__init__()
         self.combination_funcs = {'average': self.average, 'nn_comb': self.nn_combination}
         self.cf = self.combination_funcs[comb_func]
         if comb_func == 'nn_comb':
@@ -42,6 +49,8 @@ class Combination(nn.Module):
         if nn_for_ts == True:
             self.layer = nn.Linear(emb_nf, emb_nf)  
             self.nn_for_ts = True
+        else:
+            self.nn_for_ts = False
 
         self.to(device)
     
@@ -58,6 +67,7 @@ class Combination(nn.Module):
         return ts_emb
     
     def average(self, r_emb, p_emb):
+        print(r_emb.shape, p_emb.shape)
         return (r_emb + p_emb) / 2
 
 
