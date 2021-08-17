@@ -54,7 +54,7 @@ class MolDecoder(nn.Module):
         return adj_pred
 
 class TSDecoder(nn.Module):
-
+    
     def __init__(self, device = 'cpu'):
         super(TSDecoder, self).__init__()
         
@@ -65,19 +65,14 @@ class TSDecoder(nn.Module):
         self.to(device)
     
     def forward(self, node_embs, max_num_nodes, batch_size, batch_node_vec):
-        # node_embs, graph_embs = embs
+        # TODO: pass graph embs in and map with node embs?
         return self.decode_to_dist(node_embs, max_num_nodes, batch_size, batch_node_vec)
 
-    def decode_to_dist(self, x, max_num_nodes, batch_size, batch_node_vec):
-            # TODO: decode to coordinates directly!
-
-            print("decode x: ", x.shape)
-
-            node_embs = x
-            node_embs, mask = to_dense_batch(node_embs, batch_node_vec, 0., max_num_nodes) # [b, n, h]
+    def decode_to_dist(self, node_embs, max_num_nodes, batch_size, batch_node_vec):
+            """Returns probabilistic adj matrix. node_embs dim: [b * max_n, h_nf]. TODO: dist matrix, not adj?"""
             
-
             # create node emb params
+            node_embs, mask = to_dense_batch(node_embs, batch_node_vec, 0., max_num_nodes) # [b, n, h]
             x_a = node_embs.unsqueeze(1) # [b, 1, n, h]
             x_b = torch.transpose(x_a, 1, 2) # [b, n, 1, h]
             
@@ -89,26 +84,3 @@ class TSDecoder(nn.Module):
             adj_pred = X.view(batch_size, max_num_nodes, max_num_nodes) # [b, n, n]
             adj_pred = adj_pred * (1 - torch.eye(max_num_nodes)) # remove self-loops
             return adj_pred, mask
-            
-            
-
-
-            # x dim: [num_nodes, h_nf], use num_nodes as adj_matrix dim
-            # returns probabilistic adj matrix
-
-            # create params from x
-            num_nodes = x.size(0)
-            x_a = x.unsqueeze(0) # dim: [1, num_nodes, h_nf]
-            x_b = torch.transpose(x_a, 0, 1) # dim: [num_nodes, 1, h_nf], t.t([_, dim to t, dim to t])
-
-            # generate diffs between node embs as adj matrix
-            X = (x_a - x_b) ** 2 # dim: [num_nodes, num_nodes, h_nf]
-            X = X.view(num_nodes ** 2, -1) # dim: [num_nodes^2, h_nf] to apply sum
-            X = torch.sigmoid(self.W * torch.sum(X, dim = 1) + self.b) # sigmoid here since can get negative values with W, b
-
-            adj_pred = X.view(num_nodes, num_nodes) # dim: [num_nodes, num_nodes] 
-            adj_pred = adj_pred * (1 - torch.eye(num_nodes)) # remove self-loops
-
-            print(adj_pred.shape)
-
-            return adj_pred

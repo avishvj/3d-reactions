@@ -1,6 +1,6 @@
 import math
 from models.encoders.schnet import SchNetEncoder
-from models.encoders.egnn2 import EGNNEncoder
+from models.encoders.egnn import EGNNEncoder
 from models.ts_ae.tsae import TSAE
 from tqdm import tqdm
 import torch
@@ -44,13 +44,10 @@ def ts_coord_loss(D_pred, D_gt):
     assert D_pred.shape == D_gt.shape
     return torch.sqrt(F.mse_loss(D_pred, D_gt))
 
-def total_coord_loss(pred_coords, gt_coords, train_on_ts = False):
+def total_coord_loss(D_preds, D_gts, train_on_ts = False):
 
-    #adj_gt = to_dense_adj(gt_edge_index, max_num_nodes = max_num_atoms).squeeze(dim = 0)
-    #assert adj_gt.shape == adj_pred.shape, f"Your adjacency matrices don't have the same shape!"
-    
-    r, p, ts = pred_coords
-    r_gt, p_gt, ts_gt = gt_coords
+    r, p, ts = D_preds
+    r_gt, p_gt, ts_gt = D_gts
 
     r_loss = torch.sqrt(F.mse_loss(r, r_gt))
     p_loss = torch.sqrt(F.mse_loss(p, p_gt))
@@ -69,41 +66,28 @@ def train(model, loader, loss_func, opt):
     for batch_id, rxn_batch in enumerate(tqdm(loader)):
 
         opt.zero_grad()
+        
+        # prepare data for model
         rxn_batch = rxn_batch.to(model.device)
         batch_size = len(rxn_batch.num_atoms)
         max_num_nodes = max(rxn_batch.num_atoms)
         batch_node_vec = rxn_batch.x_r_batch
-        
         r_batch = {'node_feats': rxn_batch.x_r, 'edge_index': rxn_batch.edge_index_r, 'edge_attr': rxn_batch.edge_attr_r, \
             'coords': rxn_batch.pos_r, 'atomic_ns': rxn_batch.z_r, 'batch_node_vec': rxn_batch.x_r_batch}
         p_batch = {'node_feats': rxn_batch.x_p, 'edge_index': rxn_batch.edge_index_p, 'edge_attr': rxn_batch.edge_attr_p, \
             'coords': rxn_batch.pos_p, 'atomic_ns': rxn_batch.z_p, 'batch_node_vec': rxn_batch.x_p_batch}
 
+        # run model
         embs, D_pred, mask = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
         
-        D_gt = rxn_batch.pos_ts
-        print("D_gt: ", D_gt.shape)
-        # D_gt = D_gt.view(batch_size, max_num_nodes, COORD_DIM)
-        D_gt, mask = to_dense_batch(D_gt, batch_node_vec, 0., max_num_nodes)
-        print("D_gt: ", D_gt.shape)
+        # create ground truth matrix and calc loss
+        D_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
         D_gt = X_to_dist(D_gt)
-        print("D_gt: ", D_gt.shape)
-
-        # X = rxn_batch.pos_ts.view(rxn_batch.batch_size, )
-        # D_gt = X_to_dist()
-        
-        # D_gt = to_dense_adj(rxn_batch.edge_index_ts, rxn_batch.x_ts_batch, max_num_nodes=max_num_nodes)
-        
-        # adjacency matrix
-        #D_gt = to_dense_adj(rxn_batch.edge_index_ts, max_num_nodes = max_num_nodes).squeeze(dim = 0) 
-
-        # D_pred = D_pred.view(batch_size, max_num_nodes, max_num_nodes)
-        
-        # print(D_pred.shape, D_gt.shape)
-
         batch_loss = loss_func(D_pred, D_gt) / mask.sum()
+        
         batch_loss.backward()
         opt.step()
+        
         total_loss += batch_loss.item()
     
     RMSE = math.sqrt(total_loss / len(loader.dataset))
@@ -114,15 +98,26 @@ def test(model, loader, loss_func):
     total_loss = 0
     model.eval()
     test_log = TestLog()
-    
-    for batch_id, rxn_batch in tqdm(enumerate(loader)):
+
+    for batch_id, rxn_batch in enumerate(tqdm(loader)):
+
+        # prepare data for model
         rxn_batch = rxn_batch.to(model.device)
+        batch_size = len(rxn_batch.num_atoms)
+        max_num_nodes = max(rxn_batch.num_atoms)
+        batch_node_vec = rxn_batch.x_r_batch
+        r_batch = {'node_feats': rxn_batch.x_r, 'edge_index': rxn_batch.edge_index_r, 'edge_attr': rxn_batch.edge_attr_r, \
+            'coords': rxn_batch.pos_r, 'atomic_ns': rxn_batch.z_r, 'batch_node_vec': rxn_batch.x_r_batch}
+        p_batch = {'node_feats': rxn_batch.x_p, 'edge_index': rxn_batch.edge_index_p, 'edge_attr': rxn_batch.edge_attr_p, \
+            'coords': rxn_batch.pos_p, 'atomic_ns': rxn_batch.z_p, 'batch_node_vec': rxn_batch.x_p_batch}
+
+        # run model
+        embs, D_pred, mask = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
         
-        
-        embs, D_pred = model(rxn_batch) # return mask?
-        D_gt = to_dense_adj(rxn_batch.edge_index, rxn_batch.batch, rxn_batch.y)
-        
-        batch_loss = loss_func(D_pred, D_gt) # / mask.sum()
+        # create ground truth matrix and calc loss
+        D_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
+        D_gt = X_to_dist(D_gt)
+        batch_loss = loss_func(D_pred, D_gt) / mask.sum()
         total_loss += batch_loss.item()
 
         test_log.add_emb(embs)

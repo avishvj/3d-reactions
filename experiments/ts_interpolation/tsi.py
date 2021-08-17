@@ -1,103 +1,56 @@
-# data processing
-from ts_vae.data_processors.grambow_processor import ReactionDataset
-from torch_geometric.data import DataLoader
-
-# torch, torch geometric
+import os, math
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch_geometric.utils import to_dense_batch
+from dataclasses import asdict
 
-# model
-from ts_vae.ts_ae.encoder import MolEncoder
-from ts_vae.ts_ae.decoder import MolDecoder
-from ts_vae.ts_ae.ae import TS_AE, train, train_on_ts
+from models.ts_ae.training import construct_tsae, train, test
+from utils.exp import construct_logger_and_dir, save_yaml_file
+from utils.ts_interpolation import TSIExpLog, construct_dataset_and_loaders
 
-# experiment
-from experiments.exp_utils import ExperimentLog
-import matplotlib.pyplot as plt
-import numpy as np
 
-class TSI_ExpLog(ExperimentLog):
-    # tsi: transition state interpolation
+def tsi_experiment(args):
 
-    def __init__(self, num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts):
-        super(TSI_ExpLog, self).__init__(num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches)
-        self.train_on_ts = train_on_ts
-        self.epoch_ae_results = []
-    
-    def add_epoch_result(self, res):
-        self.epoch_ae_results.append(res)
-
-def tsi_main(tt_split = 0.8, batch_size = 5, epochs = 20, test_interval = 10, train_on_ts = False):
-
+    # construct logger, exp directory, and set device
     torch.set_printoptions(precision = 3, sci_mode = False)
+    log_file_name = 'tsi'
+    logger, full_log_dir = construct_logger_and_dir(log_file_name, args.log_dir)
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') # LP: cuda or AV: cuda:0
+    args.log_dir = full_log_dir
+    args.log_file_name = log_file_name + '.log'
+    args.device = device
 
-    # data prep
-    rxns = ReactionDataset(r'data')
-    num_rxns = len(rxns)
-    num_train = int(np.floor(tt_split * num_rxns))
-    to_follow = ['edge_index_r', 'edge_index_ts', 'edge_index_p', 'edge_attr_r', 'edge_attr_ts', 'edge_attr_p'
-                'pos_r', 'pos_ts', 'pos_p', 'x_r', 'x_ts', 'x_p']
-    train_loader = DataLoader(rxns[: num_train], batch_size = batch_size, follow_batch = to_follow)
-    test_loader = DataLoader(rxns[num_train: ], batch_size = batch_size, follow_batch = to_follow)
+    # save experiment params in yaml file
+    yaml_file_name = os.path.join(full_log_dir, 'experiment_parameters.yml')
+    save_yaml_file(yaml_file_name, asdict(args))
 
-    # model parameters
-    max_num_atoms = max([rxn.num_atoms.item() for rxn in train_loader.dataset])
-    assert all(rxn.num_atom_fs.item() == train_loader.dataset[0].num_atom_fs.item() for rxn in train_loader.dataset)
-    num_atom_fs = train_loader.dataset[0].num_atom_fs.item()
-    assert all(rxn.num_bond_fs.item() == train_loader.dataset[0].num_bond_fs.item() for rxn in train_loader.dataset)
-    num_bond_fs = train_loader.dataset[0].num_bond_fs.item()
-    h_nf = 5
-    emb_nf = 2
+    # data and model
+    dataset, train_loader, test_loader = construct_dataset_and_loaders(args)
+    tsae, tsae_opt, loss_func = construct_tsae(dataset, args, device)
 
-    # model and opt
-    encoder = MolEncoder(in_node_nf=num_atom_fs, in_edge_nf=num_bond_fs, h_nf=h_nf, out_nf=h_nf, emb_nf=emb_nf)
-    decoder = MolDecoder(in_node_nf=num_atom_fs, in_edge_nf=num_bond_fs, emb_nf=emb_nf)
-    ts_ae = TS_AE(encoder, decoder)
-    ts_opt = torch.optim.Adam(ts_ae.parameters(), lr = 1e-3)
+    # training
+    best_test_loss = math.inf
+    best_epoch = 0
+    exp_log = TSIExpLog(args)
 
-    # tsi experiment: train model, get embs from train and test
-    recorded_batches = []
-    experiment_params = (num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts)
-    model_params = (ts_ae, ts_opt)
-    loaders = (train_loader, test_loader)
+    logger.info("Starting training...")
+    for epoch in range(1, args.n_epochs + 1):
+        train_loss = train(tsae, train_loader, loss_func, tsae_opt)
+        logger.info("Epoch {}: Training Loss {}".format(epoch, train_loss))
 
-    print("Starting TS interpolation experiment...")
-    train_log, test_log = tsi(experiment_params, model_params, loaders)
-    print("Completed experiment, use the experiment log to print results.")
+        if epoch % args.test_interval == 0:
+            test_loss, test_log = test(tsae, test_loader, loss_func)
+            logger.info("Epoch {}: Test Loss {}".format(epoch, test_loss))       
+            if test_loss <= best_test_loss:
+                best_test_loss = test_loss
+                best_epoch = epoch
+                torch.save(tsae.state_dict(), os.path.join(full_log_dir, 'best_model.pt'))
+            exp_log.add_test_log(test_log)
 
-    return train_log, test_log
+    logger.info("Best Test Loss {} on Epoch {}".format(best_test_loss, best_epoch))
+    exp_log.completed = True
 
-def tsi(experiment_params, model_params, loaders):
-    
-    # get params out
-    # num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, train_on_ts = experiment_params
-    num_rxns, tt_split, batch_size, epochs, test_interval, recorded_batches, _ = experiment_params
-    ts_ae, ts_opt = model_params
-    train_loader, test_loader = loaders
+    return exp_log
 
-    # log training and testing
-    train_log = TSI_ExpLog(*experiment_params)
-    test_log = TSI_ExpLog(*experiment_params)
-
-    for epoch in range(1, epochs + 1):
-        # train_loss, train_epoch_stats, train_epoch_res = train(ts_ae, ts_opt, train_loader, False, train_on_ts)
-        train_loss, train_epoch_stats, train_epoch_res = train_on_ts(ts_ae, ts_opt, train_loader, False)
-        train_log.add_epoch(train_epoch_stats)
-        print(f"===== Training epoch {epoch:03d} complete with loss: {train_loss:.4f} ====")
-        
-        if epoch == epochs: # only add final train res
-            train_log.add_epoch_result(train_epoch_res)
-        
-        if epoch % test_interval == 0:
-            # test_loss, test_epoch_stats, test_epoch_res = train(ts_ae, ts_opt, test_loader, True, train_on_ts)
-            test_loss, test_epoch_stats, test_epoch_res = train_on_ts(ts_ae, ts_opt, test_loader, True)
-            test_log.add_epoch(test_epoch_stats)
-            test_log.add_epoch_result(test_epoch_res)
-            print(f"===== Testing epoch {epoch:03d} complete with loss: {test_loss:.4f} ====")
-    
-    return train_log, test_log
+### placeholders while I figure out the display functions
 
 def display_train_and_test_embs(train_log, test_log, which_to_print):
     # which_to_print is dict
@@ -170,3 +123,9 @@ def display_embs(exp_log, fig, ax, which_to_print, lab):
     ax.set_xlabel('Graph Emb Dim 2')
 
     return fig, ax
+
+
+
+
+
+
