@@ -15,7 +15,7 @@ class TSAE(nn.Module):
         self.device = device
         self.to(device)
     
-    def forward(self, r_batch, p_batch):
+    def forward(self, r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec):
         # convert initial batch data so that R and P have own batches
         # batch data needed: node_feats, edge_index, edge_attr, coords, batch_node_vec, atomic_ns
 
@@ -24,14 +24,15 @@ class TSAE(nn.Module):
         p_n_embs, p_g_emb, p_coords = self.encoder(p_batch)
         
         ts_n_embs = self.combine(r_n_embs, p_n_embs)
-
         # ts_g_emb = self.combine(r_g_emb, p_g_emb)
 
-        D_pred = self.decoder(ts_n_embs)
-        # embs = (r_g_emb, p_g_emb, ts_g_emb)
+        D_pred, mask = self.decoder(ts_n_embs, max_num_nodes, batch_size, batch_node_vec)
+        # D_pred = self.decoder(ts_g_embs)
+        
         embs = (r_n_embs, p_n_embs, ts_n_embs)
+        # embs = (r_g_emb, p_g_emb, ts_g_emb)
 
-        return embs, D_pred
+        return embs, D_pred, mask
 
 
 class Combination(nn.Module):
@@ -67,7 +68,6 @@ class Combination(nn.Module):
         return ts_emb
     
     def average(self, r_emb, p_emb):
-        print(r_emb.shape, p_emb.shape)
         return (r_emb + p_emb) / 2
 
 

@@ -26,7 +26,7 @@ def unsorted_segment_sum(edge_attr, row, num_segments):
 
 def X_to_dist(X):
     # create euclidean distance matrix from X
-    # shapes: X = bx21x3, D = bx21x21
+    # shapes: X = bxNx3, D = bxNxN
     Dsq = torch.square(torch.unsqueeze(X, 1) - torch.unsqueeze(X, 2))
     D = torch.sqrt(torch.sum(Dsq, dim=3) + 1E-3)
     return D

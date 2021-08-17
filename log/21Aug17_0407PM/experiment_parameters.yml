@@ -1,6 +1,6 @@
 batch_size: 8
 encoder_type: EGNN
-log_dir: log\21Aug16_0900PM/
+log_dir: log\21Aug17_0407PM/
 log_file_name: tsi.log
 lr: 0.001
 n_epochs: 1
