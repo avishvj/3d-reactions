@@ -85,7 +85,7 @@ def construct_dataset_and_loaders(args):
 
 
 def check_test_distribution(args):
-    """Check test distribution of TS reaction core is same as original work."""
+    """Check test distribution of TS reaction core is same as original MIT work."""
     
     mols_folder = r'data/raw/'
 

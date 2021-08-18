@@ -88,7 +88,7 @@ def train(model, loader, loss_func, opt):
         X_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
         D_gt = X_to_dist(X_gt)
 
-        batch_loss = loss_func(D_pred, D_gt) / mask.sum()
+        batch_loss = loss_func(D_pred, D_gt) # / mask.sum()
         
         batch_loss.backward()
         opt.step()
@@ -122,12 +122,15 @@ def test(model, loader, loss_func):
         # create ground truth matrix and calc loss
         X_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
         D_gt = X_to_dist(X_gt)
-        batch_loss = loss_func(D_pred, D_gt) / mask.sum()
+        batch_loss = loss_func(D_pred, D_gt) # / mask.sum()
         total_loss += batch_loss.item()
 
         # add processing data to log for analysis
-        test_log.add_emb(embs)
-        test_log.add_D(D_pred) # so can look at PyMol after
+        r_n_embs = embs[0].detach().cpu().numpy()
+        p_n_embs = embs[1].detach().cpu().numpy()
+        ts_n_embs = embs[2].detach().cpu().numpy()
+        test_log.add_emb((r_n_embs, p_n_embs, ts_n_embs))
+        test_log.add_D(D_pred.detach().cpu().numpy()) # so can look at PyMol after
     
     RMSE = math.sqrt(total_loss / len(loader.dataset))
     return RMSE, test_log

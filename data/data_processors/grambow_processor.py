@@ -234,14 +234,6 @@ class ReactionDataset(InMemoryDataset):
                     y.extend([D_ts[i][j], D_ts[j][i]])
             y = torch.tensor(y, dtype=torch.float)
             
-            # redoing positions
-            #D = Chem.Get3DDistanceMatrix(mol)
-            #atom_positions = []
-            #for i in range(N):
-            #    for j in range(i+1, N):
-            #        atom_positions.extend([D[i][j], D[j][i]])
-            #atom_positions = torch.tensor(atom_positions, dtype = torch.float)
-            
             # all the features
             type_idx, atomic_number, aromatic = [], [], []
             sp, sp2, sp3 = [], [], []
