@@ -1,19 +1,22 @@
 import math
-from models.encoders.schnet import SchNetEncoder
-from models.encoders.egnn import EGNNEncoder
-from models.ts_ae.tsae import TSAE
 from tqdm import tqdm
+from dataclasses import asdict
 import torch
 import torch.nn.functional as F
-from torch_geometric.utils import to_dense_adj, to_dense_batch
-from dataclasses import asdict
+
+from models.ts_ae.tsae import TSAE
+from models.encoders.schnet import SchNetEncoder
+from models.encoders.egnn import EGNNEncoder
+
 from utils.exp import TestLog
 from utils.models import X_to_dist
+from torch_geometric.utils import to_dense_batch
 from utils.ts_interpolation import SchNetParams, EGNNParams
 
 COORD_DIM = 3
 
 def construct_tsae(dataset, args, device):
+    """Create model, optimiser, and loss function."""
     
     # model
     if args.encoder_type == 'SchNet':
@@ -35,25 +38,26 @@ def construct_tsae(dataset, args, device):
     
     # opt and loss
     tsae_opt = torch.optim.Adam(tsae.parameters(), args.lr)
-    loss_func = ts_coord_loss # total_coord_loss
+    loss_func = mol_coord_loss 
 
     return tsae, tsae_opt, loss_func
 
 
-def ts_coord_loss(D_pred, D_gt):
+def mol_coord_loss(D_pred, D_gt):
+    """Compare distance matrices of molecule. TODO: might be adj right now -> make IA dist."""
     assert D_pred.shape == D_gt.shape
     return torch.sqrt(F.mse_loss(D_pred, D_gt))
 
 def total_coord_loss(D_preds, D_gts, train_on_ts = False):
-
+    """Compare distance matrices of reaction molecules. """
     r, p, ts = D_preds
     r_gt, p_gt, ts_gt = D_gts
 
-    r_loss = torch.sqrt(F.mse_loss(r, r_gt))
-    p_loss = torch.sqrt(F.mse_loss(p, p_gt))
+    r_loss = mol_coord_loss(r, r_gt)
+    p_loss = mol_coord_loss(p, p_gt)
 
     if train_on_ts:
-        ts_loss = torch.sqrt(F.mse_loss(ts, ts_gt))
+        ts_loss = mol_coord_loss(ts, ts_gt)
         return r_loss, p_loss, ts_loss
     
     return r_loss, p_loss
@@ -63,7 +67,7 @@ def train(model, loader, loss_func, opt):
     total_loss = 0
     model.train()
 
-    for batch_id, rxn_batch in enumerate(tqdm(loader)):
+    for _, rxn_batch in enumerate(tqdm(loader)):
 
         opt.zero_grad()
         
@@ -78,11 +82,11 @@ def train(model, loader, loss_func, opt):
             'coords': rxn_batch.pos_p, 'atomic_ns': rxn_batch.z_p, 'batch_node_vec': rxn_batch.x_p_batch}
 
         # run model
-        embs, D_pred, mask = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
+        _, D_pred, _ = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
         
         # create ground truth matrix and calc loss
-        D_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
-        D_gt = X_to_dist(D_gt)
+        X_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
+        D_gt = X_to_dist(X_gt)
         batch_loss = loss_func(D_pred, D_gt) / mask.sum()
         
         batch_loss.backward()
@@ -99,7 +103,7 @@ def test(model, loader, loss_func):
     model.eval()
     test_log = TestLog()
 
-    for batch_id, rxn_batch in enumerate(tqdm(loader)):
+    for _, rxn_batch in enumerate(tqdm(loader)):
 
         # prepare data for model
         rxn_batch = rxn_batch.to(model.device)
@@ -112,14 +116,15 @@ def test(model, loader, loss_func):
             'coords': rxn_batch.pos_p, 'atomic_ns': rxn_batch.z_p, 'batch_node_vec': rxn_batch.x_p_batch}
 
         # run model
-        embs, D_pred, mask = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
+        embs, D_pred, _ = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
         
         # create ground truth matrix and calc loss
-        D_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
-        D_gt = X_to_dist(D_gt)
+        X_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
+        D_gt = X_to_dist(X_gt)
         batch_loss = loss_func(D_pred, D_gt) / mask.sum()
         total_loss += batch_loss.item()
 
+        # add processing data to log for analysis
         test_log.add_emb(embs)
         test_log.add_D(D_pred) # so can look at PyMol after
     

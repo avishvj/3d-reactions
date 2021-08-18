@@ -42,15 +42,3 @@ def interatomic_distance_matrix_initialise(mol):
             # create triangular matrix
             matrix[i, j] = 1e3 # max_dist
             matrix[j, i] = 1e-3 # min dist
-
-### eval funcs
-
-def adj_error(adj_pred, adj_gen):
-    # probabilistic adj, sum adj_errors, 
-
-    num_nodes = adj_gen.size(0)
-    adj_pred = (adj_pred > 0.5).type(torch.float32)
-    adj_errors = torch.abs(adj_pred - adj_gen)
-    wrong_edges = torch.sum(adj_errors)
-    adj_error = wrong_edges / (num_nodes ** 2 - num_nodes)
-    return wrong_edges.item(), adj_error.item()
