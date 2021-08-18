@@ -5,3 +5,4 @@ def remove_processed_data():
     for f in files:
         os.remove(f)
     print("Files removed.")
+
