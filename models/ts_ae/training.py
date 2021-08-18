@@ -10,7 +10,7 @@ from models.encoders.egnn import EGNNEncoder
 
 from utils.exp import TestLog
 from utils.models import X_to_dist
-from torch_geometric.utils import to_dense_batch
+from torch_geometric.utils import to_dense_batch, to_dense_adj
 from utils.ts_interpolation import SchNetParams, EGNNParams
 
 COORD_DIM = 3
@@ -82,11 +82,12 @@ def train(model, loader, loss_func, opt):
             'coords': rxn_batch.pos_p, 'atomic_ns': rxn_batch.z_p, 'batch_node_vec': rxn_batch.x_p_batch}
 
         # run model
-        _, D_pred, _ = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
+        _, D_pred, mask = model(r_batch, p_batch, max_num_nodes, batch_size, batch_node_vec) 
         
         # create ground truth matrix and calc loss
         X_gt, mask = to_dense_batch(rxn_batch.pos_ts, batch_node_vec, 0., max_num_nodes) # pos_ts = [b * max_num_nodes, 3]
         D_gt = X_to_dist(X_gt)
+
         batch_loss = loss_func(D_pred, D_gt) / mask.sum()
         
         batch_loss.backward()

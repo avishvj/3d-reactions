@@ -14,7 +14,7 @@ def me_experiment(args):
     torch.set_printoptions(precision = 3, sci_mode = False)
     log_file_name = 'train'
     logger, full_log_dir = construct_logger_and_dir(log_file_name, args.log_dir)
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu') # LP: cuda or AV: cuda:0
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu') # LP: cuda or AV: cuda:0
     args.log_dir = full_log_dir
     args.log_file_name = log_file_name + '.log'
     args.device = device

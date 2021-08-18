@@ -40,6 +40,7 @@ class OtherReactionTriple(Data):
             self.pos_r = r.pos
             self.x_r = r.x
             self.z_r = r.z
+            self.y_r = r.y
 
             # ts
             self.edge_attr_ts = ts.edge_attr
@@ -47,6 +48,7 @@ class OtherReactionTriple(Data):
             self.pos_ts = ts.pos
             self.x_ts = ts.x
             self.z_ts = ts.z
+            self.y_ts = ts.y
 
             # product
             self.edge_attr_p = p.edge_attr
@@ -54,6 +56,7 @@ class OtherReactionTriple(Data):
             self.pos_p = p.pos
             self.x_p = p.x
             self.z_p = p.z
+            self.y_p = p.y
         else:
             NameError("Reactant, TS, or Product not defined for this reaction.")
 
@@ -218,10 +221,18 @@ class ReactionDataset(InMemoryDataset):
             #    atom_positions.append(c.GetPositions())
             #atom_positions = torch.tensor(atom_positions, dtype = torch.float)
             
-            # get atom positions as matrix w shape [num_nodes, num_dimensions] = [num_atoms, 3]
+            # get atom positions as matrix w shape [num_nodes, coord_dim] = [num_atoms, 3]
             atom_data = geometries.GetItemText(i).split('\n')[4: 4+N]
             atom_positions = [[float(x) for x in line.split()[:3]] for line in atom_data]
             atom_positions = torch.tensor(atom_positions, dtype = torch.float)
+
+            # also get positions as flattened 3d dist matrix
+            y = []
+            D_ts = Chem.Get3DDistanceMatrix(mol)
+            for i in range(N):
+                for j in range(i+1, N):
+                    y.extend([D_ts[i][j], D_ts[j][i]])
+            y = torch.tensor(y, dtype=torch.float)
             
             # redoing positions
             #D = Chem.Get3DDistanceMatrix(mol)
@@ -277,7 +288,7 @@ class ReactionDataset(InMemoryDataset):
             x = torch.cat([x1.to(torch.float), x2], dim = -1)
 
             idx = counted + i 
-            mol_data = Data(x = x, z = z, pos = atom_positions, edge_index = edge_index, edge_attr = edge_attr, idx = idx)
+            mol_data = Data(x = x, z = z, pos = atom_positions, y = y, edge_index = edge_index, edge_attr = edge_attr, idx = idx)
             data_list.append(mol_data)
         
         return data_list

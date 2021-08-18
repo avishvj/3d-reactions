@@ -61,7 +61,7 @@ class TSDecoder(nn.Module):
         # decoder adj [found these worked well]
         self.W = nn.Parameter(0.5 * torch.ones(1)).to(device)
         self.b = nn.Parameter(0.8 * torch.ones(1)).to(device)
-        
+        self.device = device
         self.to(device)
     
     def forward(self, node_embs, max_num_nodes, batch_size, batch_node_vec):
@@ -82,5 +82,5 @@ class TSDecoder(nn.Module):
             X = torch.sigmoid(self.W * torch.sum(X, dim=2) + self.b) # sigmoid since -ve possible w/ W, b
             
             adj_pred = X.view(batch_size, max_num_nodes, max_num_nodes) # [b, n, n]
-            adj_pred = adj_pred * (1 - torch.eye(max_num_nodes)) # remove self-loops
+            adj_pred = adj_pred * (1 - torch.eye(max_num_nodes)).to(self.device) # remove self-loops
             return adj_pred, mask

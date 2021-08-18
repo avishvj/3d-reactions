@@ -50,6 +50,15 @@ def tsi_experiment(args):
 
     return exp_log
 
+### data checks
+
+def check_data_distributions(args):
+    dataset, train_loader, test_loader = construct_dataset_and_loaders(args)
+    print(f"There are {len(train_loader.dataset)} train reactions and \
+         {len(test_loader.dataset)} test reactions.")
+    # for rxn in 
+
+
 ### placeholders while I figure out the display functions
 
 def display_train_and_test_embs(train_log, test_log, which_to_print):
