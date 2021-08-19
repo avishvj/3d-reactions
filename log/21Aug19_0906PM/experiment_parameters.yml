@@ -1,0 +1,17 @@
+batch_size: 256
+gnn_depth: 3
+h_nf: 64
+log_dir: log/21Aug19_0906PM/
+log_file_name: train.log
+loss: mse
+lr: 0.001
+n_epochs: 100
+n_layers: 1
+n_rxns: 8000
+num_workers: 2
+optimiser: adam
+remove_existing_data: false
+root_dir: data
+test_interval: 100
+tt_split: 0.889
+verbose: true

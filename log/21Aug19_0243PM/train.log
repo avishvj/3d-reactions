@@ -1,0 +1,20 @@
+Starting training...
+Epoch 1: Training Loss 0.1150558527096817
+Epoch 1: Test Loss 0.10402451811297023
+Best Test Loss 0.10402451811297023 on Epoch 1
+Starting training...
+Epoch 1: Training Loss 0.08875116963922318
+Epoch 1: Test Loss 0.07070664884522704
+Best Test Loss 0.07070664884522704 on Epoch 1
+Starting training...
+Epoch 1: Training Loss 0.0921827638207874
+Epoch 1: Test Loss 0.06886765497769783
+Best Test Loss 0.06886765497769783 on Epoch 1
+Starting training...
+Epoch 1: Training Loss 0.07693166856963325
+Epoch 1: Test Loss 0.07362655866607491
+Best Test Loss 0.07362655866607491 on Epoch 1
+Starting training...
+Epoch 1: Training Loss 0.09155187653977778
+Epoch 1: Test Loss 0.0718315031503906
+Best Test Loss 0.0718315031503906 on Epoch 1
