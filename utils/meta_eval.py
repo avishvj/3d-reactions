@@ -26,13 +26,15 @@ class TSGenExpLog(BaseExpLog):
 
     def __init__(self, args):
         super(TSGenExpLog, self).__init__(args)
-    
-    def save_Ws(self, file_name, save_to_log_dir = False, W_folder='experiments/meta_eval/ws/'):
-        test_Ws = np.concatenate(self.test_logs[-1].Ws, 0).squeeze() # final test log, and remove singleton dims; new dim = num_rxns x 21 x 21
-        assert len(test_Ws) == 842, f"Should have 842 test_Ws when unbatched, you have {len(test_Ws)}."
+
+    def save_Ws(self, file_name, W_folder='experiments/meta_eval/ws/', save_to_log_dir = False):
+        """Allows for saving weight matrices from testing model in folder and log file."""
+        assert self.check_test_batches(self.test_logs[-1].Ws), "You don't have the same number of batched W files as batches."
+        test_Ws = np.concatenate(self.test_logs[-1].Ws, 0).squeeze() # have to squeeze since extra singleton dim
+        assert len(test_Ws) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ws)}."
         np.save(W_folder + file_name, test_Ws)
         if save_to_log_dir:
-            np.save(self.args.log_dir + 'W', test_Ws)
+            np.save(self.args.log_dir + 'W' + file_name, test_Ws)
 
 
 ### construct data
@@ -47,6 +49,7 @@ def construct_dataset_and_loaders(args):
     
     # build loaders using tt_split
     n_rxns = len(dataset) # as args.n_rxns may be over the limit
+    args.n_rxns = n_rxns # set args.n_rxns to real max
     n_train = int(np.floor(args.tt_split * n_rxns))
     train_loader = DataLoader(dataset[: n_train], batch_size = args.batch_size, \
         shuffle = True, num_workers=args.num_workers, pin_memory=True)

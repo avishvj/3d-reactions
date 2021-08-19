@@ -1,4 +1,4 @@
-import os, torch, torch.nn.functional as F
+import os, torch, torch.nn as nn, torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn import Linear, Module
 from torch_geometric.utils import to_dense_adj
@@ -19,10 +19,12 @@ class G2C(Module):
         self.gnn = GNN(in_node_nf, in_edge_nf, h_nf, n_layers, gnn_depth)
         self.edge_mlp = MLP(h_nf, h_nf, n_layers)
         self.pred = Linear(h_nf, DW_DIM) 
-        self.act = torch.nn.Softplus()
-        self.d_init = torch.nn.Parameter(torch.tensor([4.]), requires_grad=True)
+        self.act = nn.Softplus()
+        self.d_init = nn.Parameter(torch.tensor([4.]), requires_grad=True)
         self.device = device
         # learnable opt params: T=[50]., eps=[0.1], alpha=[5.], alpha_base=[0.1]; add requires_grad=True
+        self.dropout = nn.Dropout(0.5)
+
         self.to(device)
     
     def forward(self, batch):

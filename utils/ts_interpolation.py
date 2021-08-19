@@ -69,6 +69,7 @@ def construct_dataset_and_loaders(args):
     
     # build loaders using tt_split
     n_rxns = len(dataset) # as args.n_rxns may be over the limit
+    args.n_rxns = n_rxns # set args.n_rxns to real max
     n_train = int(np.floor(args.tt_split * n_rxns))
 
     to_follow = ['edge_index_r', 'edge_index_ts', 'edge_index_p', 

@@ -63,17 +63,18 @@ class EdgeModel(nn.Module):
         return self.mlp(out)
 
 class MLP(nn.Module):
-    def __init__(self, in_nf, out_nf, n_layers, act=ReLU()):
+    def __init__(self, in_nf, out_nf, n_layers, act=nn.ReLU()):
         super(MLP, self).__init__()
-        self.layers = ModuleList()
+        self.layers = nn.ModuleList()
         for l in range(n_layers):
             if l == 0:
-                self.layers.append(Linear(in_nf, out_nf))
+               self.layers.append(Linear(in_nf, out_nf))
             else:
                 self.layers.append(Linear(out_nf, out_nf))
-            self.layers.append(BatchNorm1d(out_nf))
+            self.layers.append(nn.Linear(out_nf, out_nf))
+            self.layers.append(nn.BatchNorm1d(out_nf))
             self.layers.append(act)
-        self.layers.append(Linear(out_nf, out_nf))
+        self.layers.append(nn.Linear(out_nf, out_nf))
     
     def forward(self, feats):
         for l in range(len(self.layers)):

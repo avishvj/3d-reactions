@@ -33,34 +33,46 @@ class BaseExpLog:
     def add_test_log(self, test_log):
         self.test_logs.append(test_log)
     
-    def save_Ds(self, file_name, D_folder, save_to_log_dir = False):
-        # give file names as 'D10'/'W8'/'E6'
+    def save_Ds(self, file_name, D_folder='experiments/meta_eval/d_inits/', save_to_log_dir = False):
+        """Allows for saving distance matrices from testing model in folder and log file."""
+        assert self.check_test_batches(self.test_logs[-1].Ds), "You don't have the same number of batched D files as batches."
         test_Ds = np.concatenate(self.test_logs[-1].Ds, 0) # final test log, new dim = num_rxns x 21 x 21
         assert len(test_Ds) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ds)}."
         np.save(D_folder + file_name, test_Ds)
         if save_to_log_dir:
-            np.save(self.args.log_dir + file_name, test_Ds)
-    
+            np.save(self.args.log_dir + 'D' + file_name, test_Ds)
+
     def plot_loss(self, save_fig=False):
         if not self.completed:
             raise Exception("Experiment has not been run yet.")
         log_file_path = os.path.join(os.path.dirname(self.args.log_dir), self.args.log_file_name)
         plot_tt_loss(log_file_path, save_fig)
+    
+    def check_test_batches(self, test_log_files):
+        n_train = int(np.floor(self.args.tt_split * self.args.n_rxns))
+        n_test = self.args.n_rxns - n_train
+        n_full_batches = n_test // self.args.batch_size
+        n_partial_batches = 0 if n_test % self.args.batch_size == 0 else 1
+        n_total_batches = n_full_batches + n_partial_batches
+        return len(test_log_files) == n_total_batches
 
 
 class TestLog:
-    def __init__(self, Ds = [], Ws = [], embs = []):
-        self.Ds = Ds
-        self.Ws = Ws
-        self.embs = embs
+    def __init__(self):
+        self.Ds = []
+        self.Ws = []
+        self.embs = []
     
     def add_D(self, D):
+        """Adds batch of Ds."""
         self.Ds.append(D)
     
     def add_W(self, W):
+        """Adds batch of Ws."""
         self.Ws.append(W)
 
     def add_emb(self, emb):
+        """Adds batch of node embeddings for R/P/TS."""
         self.embs.append(emb)
 
 ### logging
