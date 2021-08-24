@@ -112,7 +112,7 @@ def create_ds_dict(d_files, d_folder='d_inits/', mols_folder=r'data/raw/'):
     all_ds = [ds[ds != 0] for ds in all_ds] # only keep non-zero values
     assert all_same([len(ds) for ds in all_ds]), "Lengths of all ds after removing zeroes don't match."
 
-    ds_dict = {'gt': (all_ds[0], 'Ground Truth'), 'mit': (all_ds[1], 'MIT D_fin'), \
+    ds_dict = {'gt': (all_ds[0], 'Ground Truth'), 'mit': (all_ds[1], 'MIT D_init'), \
                'lin_approx': (all_ds[2], 'Linear Approximation')}
     base_ds_counter = len(ds_dict)
     
@@ -155,13 +155,13 @@ def plot_ds(ds_dict, col, no_print=[], save_fig_name=None):
 
 NUM_STD_DS = 3
 
-def ensemble_plot(ds_dict, ds_not_to_print, print_my_ds = False, sorted = False, col = 'b', name = None):
+def ensemble_plot(ds_dict, ds_not_to_print, print_my_ds = False, sort = False, col = 'b', name = None):
     num_my_ds = len(ds_dict) - NUM_STD_DS
     
     # sort the lists so ensemble plots more resemble an average
     d_init_lists = [[] for _ in range(num_my_ds)]
     for j in range(num_my_ds):
-        if sorted:
+        if sort:
             d_init_lists[j] = sorted(ds_dict[f'D_fin{j}'][0])
         else:
             d_init_lists[j] = ds_dict[f'D_fin{j}'][0]
