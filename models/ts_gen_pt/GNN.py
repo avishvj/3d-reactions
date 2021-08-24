@@ -71,6 +71,7 @@ class MLP(nn.Module):
                self.layers.append(Linear(in_nf, out_nf))
             else:
                 self.layers.append(Linear(out_nf, out_nf))
+            self.layers.append(nn.Dropout(p=0.5)) # DO
             self.layers.append(nn.Linear(out_nf, out_nf))
             self.layers.append(nn.BatchNorm1d(out_nf))
             self.layers.append(act)

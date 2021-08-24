@@ -23,7 +23,7 @@ class G2C(Module):
         self.d_init = nn.Parameter(torch.tensor([4.]), requires_grad=True)
         self.device = device
         # learnable opt params: T=[50]., eps=[0.1], alpha=[5.], alpha_base=[0.1]; add requires_grad=True
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(0.5) # DO
 
         self.to(device)
     
@@ -33,6 +33,7 @@ class G2C(Module):
         # create distance and weight matrices predictions
         _, edge_attr = self.gnn(batch.x, batch.edge_index, batch.edge_attr)
         edge_emb = self.edge_mlp(edge_attr)
+        edge_emb = self.dropout(edge_emb) # DO
         dw_pred = self.pred(edge_emb)
         dw_pred = to_dense_adj(batch.edge_index, batch.batch, dw_pred) # shape: bxNxNx2
         dw_pred = dw_pred + dw_pred.permute([0, 2, 1, 3]) # symmetrise
@@ -64,7 +65,7 @@ class G2C(Module):
     def dist_nlsq(self, D, W, mask):
         # nonlinear weighted least squares. objective is Sum_ij { w_ij (D_ij - |x_i - x_j|)^2 }
         # shapes: D=bx21x21; W=bx21x21; mask=bx21x21
-        T, eps, alpha, alpha_base = 10, EPS1, 5.0, 0.1 # these can be made trainable
+        T, eps, alpha, alpha_base = 20, EPS1, 5.0, 0.1 # these can be made trainable
         
         def grad_func(X):
             # shapes: X=bx21x3

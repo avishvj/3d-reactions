@@ -58,48 +58,6 @@ def construct_dataset_and_loaders(args):
     
     return dataset, train_loader, test_loader
 
-### dataset perturbations
-# TODO: weight perturbations in similar way?
-
-def construct_perturbed_dataset_and_loaders(args, perturbation):
-    # NOTE: this perturbation will be different to mine because of diff init
-    # TODO: perturb sdf or perturb constructed dataset?
-
-    if args.remove_existing_data:
-        remove_processed_data()
-    
-    # build dataset
-    dataset = TSGenDataset(args.root_dir, args.n_rxns)
-
-    for ts_init in dataset:
-        ts_init = perturb_ts(ts_init, perturbation)
-    
-    return dataset
-
-def perturb_ts(ts_init, perturbation = 'std_norm'):
-    # perturbation = 'noise' or 'rotate'
-
-    if perturbation == 'std_norm':
-        # add standard normally distributed noise to each position 
-
-        noise = torch.randn(1)
-
-        for atom_i in ts_init: # TODO: add to positional info so to edge features then?
-            atom_i += noise
-
-    elif perturbation == 'rotate':
-        # rotate: find reaction axis, rotate each molecule around that
-        
-        # axis = 
-        # rotate func
-        print()
-
-    else:
-        raise NotImplementedError("Input perturbation invalid. Try TODO")
-
-    return ts_init
-
-
 ### recording d_inits
 
 def all_same(items):
@@ -154,18 +112,19 @@ def create_ds_dict(d_files, d_folder='d_inits/', mols_folder=r'data/raw/'):
     all_ds = [ds[ds != 0] for ds in all_ds] # only keep non-zero values
     assert all_same([len(ds) for ds in all_ds]), "Lengths of all ds after removing zeroes don't match."
 
-    ds_dict = {'gt': (all_ds[0], 'Ground Truth'), 'mit': (all_ds[1], 'MIT D_init'), \
+    ds_dict = {'gt': (all_ds[0], 'Ground Truth'), 'mit': (all_ds[1], 'MIT D_fin'), \
                'lin_approx': (all_ds[2], 'Linear Approximation')}
     base_ds_counter = len(ds_dict)
     
     for d_id in range(len(d_init_lists)):
-        name = f'D_init{d_id}'
+        name = f'D_fin{d_id}'
         ds_dict[name] = (all_ds[base_ds_counter + d_id], name)
     
     return ds_dict
 
-def plot_ds(ds_dict, no_print=[], save_fig_name=None):
-    # keys: 'gt', 'lin_approx', 'mit', f'D_init{i}'
+
+def plot_ds(ds_dict, col, no_print=[], save_fig_name=None):
+    # keys: 'gt', 'lin_approx', 'mit', f'D_fin{i}'
 
     fig, ax = plt.subplots(figsize=(12,9))
     num_to_plot = len(ds_dict)
@@ -174,6 +133,9 @@ def plot_ds(ds_dict, no_print=[], save_fig_name=None):
     # print for all keys not in no_print
     for i, key in enumerate(ds_dict.keys()):
         if key in no_print:
+            continue
+        if key != 'gt' and key != 'mit' and key != 'lin_approx':
+            sns.distplot(ds_dict[key][0], color=col, kde_kws={"lw": 3, "label": ds_dict[key][1]}, hist=False)
             continue
         sns.distplot(ds_dict[key][0], color=cols[i], kde_kws={"lw": 3, "label": ds_dict[key][1]}, hist=False)
 
@@ -190,8 +152,36 @@ def plot_ds(ds_dict, no_print=[], save_fig_name=None):
     if save_fig_name:
         plt.savefig(f'{save_fig_name}.png', bbox_inches='tight')
 
+
 NUM_STD_DS = 3
 
+def ensemble_plot(ds_dict, ds_not_to_print, print_my_ds = False, sorted = False, col = 'b', name = None):
+    num_my_ds = len(ds_dict) - NUM_STD_DS
+    
+    # sort the lists so ensemble plots more resemble an average
+    d_init_lists = [[] for _ in range(num_my_ds)]
+    for j in range(num_my_ds):
+        if sorted:
+            d_init_lists[j] = sorted(ds_dict[f'D_fin{j}'][0])
+        else:
+            d_init_lists[j] = ds_dict[f'D_fin{j}'][0]
+
+    ens_ds = []
+    for i in range(len(ds_dict['mit'][0])):
+        ens_d = 0
+        for j in range(num_my_ds):
+            ens_d += d_init_lists[j][i]
+        ens_d /= num_my_ds
+        ens_ds.append(ens_d)
+    ds_dict['ens'] = (ens_ds, "Avg Ensemble D_fin")
+
+    if not print_my_ds:
+        for j in range(0, num_my_ds):
+            ds_not_to_print.append(f'D_fin{j}')
+
+    plot_ds(ds_dict, col, ds_not_to_print, name)
+
+"""
 def ensemble_plot(ds_dict, ds_not_to_print, print_my_ds = False):
     num_my_ds = len(ds_dict) - NUM_STD_DS
     ens_ds = []
@@ -208,3 +198,4 @@ def ensemble_plot(ds_dict, ds_not_to_print, print_my_ds = False):
             ds_not_to_print.append(f'D_init{j}')
 
     plot_ds(ds_dict, ds_not_to_print, None)
+"""

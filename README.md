@@ -15,6 +15,6 @@ To be completed later. Include:
 - Install .yml file
 - Stuff to compare to existing models
 - Notebooks: mention creating ipython kernels corresponding to .yml
-- Describe how logger works and how results get saved.
+- Describe how logger works and how results get saved
 
-Model, comparison. Stability tests on others, rep learning, integrated UQ, latent space eval. 
+Model, comparison. Stability tests on others, rep learning, integrated UQ. 

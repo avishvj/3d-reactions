@@ -57,6 +57,31 @@ class TSIExpLog(BaseExpLog):
         np.save(emb_folder + file_name, test_embs)
         if save_to_log_dir:
             np.save(self.args.log_dir + 'emb', test_embs)
+    
+    def save_Ds(self, file_name, D_folder='experiments/meta_eval/d_inits/', save_to_log_dir = False):
+        """Allows for saving distance matrices from testing model in folder and log file."""
+        assert self.check_test_batches(self.test_logs[-1].Ds), "You don't have the same number of batched D files as batches."
+        # pad here
+        test_Ds = self.pad_and_unbatch_Ds(self.test_logs[-1].Ds) # final test log, new dim = num_rxns x 21 x 21
+        assert len(test_Ds) == 842, f"Should have 842 test_D_inits when unbatched, you have {len(test_Ds)}."
+        np.save(D_folder + file_name, test_Ds)
+        if save_to_log_dir:
+            np.save(self.args.log_dir + 'D' + file_name, test_Ds)
+        
+    def pad_and_unbatch_Ds(self, Ds):
+        args = self.args
+        batch_size = args.batch_size
+        MAX_N = 21
+        n_train = int(np.floor(args.tt_split * args.n_rxns))
+        n_test = args.n_rxns - n_train
+
+        unbatched_Ds = np.zeros((n_test, MAX_N, MAX_N))
+        for i, batch in enumerate(Ds):
+            start_index = i * batch_size
+            if i == 0:
+                start_index = 0
+            unbatched_Ds[start_index:start_index + batch.shape[0], :batch.shape[1], :batch.shape[2]] = batch
+        return unbatched_Ds
 
 
 def construct_dataset_and_loaders(args):
